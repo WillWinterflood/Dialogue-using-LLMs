@@ -7,10 +7,18 @@ input() -> call LLM -> log -> print
 
 import json
 import os
+from pyexpat.errors import messages
 import time
+from pathlib import Path
 
-
+PROMPT_PATH = Path("prompts/prompt_v1.txt")
 LOG_PATH = "dialogue_log.jsonl"
+
+def load_prompt_template(): #loading the prompt template from a file
+    if not PROMPT_PATH.exists():
+        raise RuntimeError(f"Prompt file not found: {PROMPT_PATH}")
+    text = PROMPT_PATH.read_text(encoding="utf-8").strip()
+    return text
 
 def log_turn(user_text, assistant_text, model_id):
     row = {
@@ -24,9 +32,9 @@ def log_turn(user_text, assistant_text, model_id):
 
 
 def main():
-    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-    model_id = os.getenv("LOCAL_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
-    max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "128"))
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1") #Stops the model printing progess bars 
+    model_id = os.getenv("LOCAL_MODEL", "Qwen/Qwen2.5-0.5B-Instruct") #Model being used for the time being
+    max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "128")) #Max tokens, small for testing
 
     try:
         import torch
@@ -39,18 +47,19 @@ def main():
         print(f"Loading local model: {model_id}")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         model = AutoModelForCausalLM.from_pretrained(model_id)
-        if tokenizer.pad_token_id is None:
+        if tokenizer.pad_token_id is None: #Runtime error for padding tokens
             tokenizer.pad_token = tokenizer.eos_token
-        # Avoid warnings from incompatible default generation flags.
-        model.generation_config.temperature = None
+        model.generation_config.temperature = None #Will enable temp later. Just want the likely response for testing and also means it is reproducible meaning easier to debug and easier to compare changes.
         model.generation_config.top_p = None
         model.generation_config.top_k = None
     except Exception as exc:
         print(f"Startup error: failed to load model ({exc})")
         return
 
-    print("Minimal LLM chat ready. Type /quit to exit.")
-    messages = [{"role": "system", "content": "You are a concise, helpful assistant."}]
+    print("Commit 3a - LLM chat ready. /quit or /exit to stop.")
+    messages = [{"role": "system", "content": "You are a concise, helpful assistant."}] #Conditioning for the LLM, small for testing
+
+    prompt_template = load_prompt_template()
 
     while True:
         try:
@@ -64,7 +73,8 @@ def main():
         if user_text.lower() in {"/quit", "/exit"}:
             print("Session ended.")
             break
-        messages.append({"role": "user", "content": user_text})
+        prompt_text = f"{prompt_template}\n\nPlayer input:\n{user_text}\n\nReturn JSON only." #New JSON only for easier parsing later. Need to ensure the LLM understands
+        messages.append({"role": "user", "content": prompt_text})
 
         try:
             if hasattr(tokenizer, "apply_chat_template"):
@@ -73,14 +83,12 @@ def main():
                     tokenize=False,
                     add_generation_prompt=True,
                 )
-            else:
-                full_prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages) + "\nassistant:"
 
             inputs = tokenizer(full_prompt, return_tensors="pt")
-            inputs = {k: v.to(model.device) for k, v in inputs.items()}
+            inputs = {k: v.to(model.device) for k, v in inputs.items()}#Moving to model's device for ease
 
             with torch.no_grad():
-                output_ids = model.generate(
+                output_ids = model.generate( #Generation
                     **inputs,
                     do_sample=False,
                     max_new_tokens=max_new_tokens,
@@ -89,7 +97,7 @@ def main():
                 )
 
             prompt_len = inputs["input_ids"].shape[1]
-            completion_ids = output_ids[0][prompt_len:]
+            completion_ids = output_ids[0][prompt_len:] #Taling the new tokens
             assistant_text = tokenizer.decode(completion_ids, skip_special_tokens=True).strip()
             if not assistant_text:
                 assistant_text = "(empty response)"
