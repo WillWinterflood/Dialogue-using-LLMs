@@ -8,10 +8,11 @@ Current direction is incremental:
 - Commit 2: prove local model loading and generation.
 - Commit 3a: introduce a strict JSON prompt contract.
 - Commit 3b: add JSON parsing and minimal schema validation in runtime.
+- Commit 3c: add one retry/recovery pass for invalid JSON outputs. 
 
-## Current Runtime (Commit 3b)
-`game.py` runs a small local chat loop:
-- `input() -> build prompt -> call local LLM -> parse/validate JSON -> log -> print`
+## Current Runtime (Commit 3c) 
+`game.py` runs a small local chat loop: 
+- `input() -> build prompt -> call local LLM -> parse/validate JSON -> retry once if invalid -> log -> print` 
 
 The prompt template is stored in:
 - `prompts/prompt_v1.txt`
@@ -27,8 +28,9 @@ Validation now enforces:
 - unexpected keys are flagged
 
 If output is invalid:
-- the loop continues without crashing
-- validation errors are shown and logged
+- one strict retry is attempted
+- if still invalid, the loop continues without crashing 
+- validation errors are shown and logged 
 
 ## Setup
 ```bash
@@ -57,3 +59,5 @@ Each row stores:
 - parsed output
 - valid boolean
 - validation errors
+- attempt_count 
+- recovered_after_retry 
