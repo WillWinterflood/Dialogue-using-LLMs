@@ -149,10 +149,10 @@ def main():
             inputs = tokenizer(full_prompt, return_tensors="pt")
             inputs = {k: v.to(model.device) for k, v in inputs.items()}#Moving to model's device for ease
 
-            with torch.no_grad():
+            with torch.no_grad(): #No gradients or training as we are still in testing
                 output_ids = model.generate( #Generation
                     **inputs,
-                    do_sample=False,
+                    do_sample=False, 
                     max_new_tokens=max_new_tokens,
                     pad_token_id=tokenizer.pad_token_id,
                     eos_token_id=tokenizer.eos_token_id,
