@@ -1,13 +1,12 @@
 '''
 game.py
 
-Commit 2 minimal runtime:
-input() -> call LLM -> log -> print
+Commit 3b runtime:
+input() -> build prompt -> call LLM -> parse/validate JSON -> log -> print
 '''
 
 import json
 import os
-from pyexpat.errors import messages
 import time
 from pathlib import Path
 
@@ -20,12 +19,72 @@ def load_prompt_template(): #loading the prompt template from a file
     text = PROMPT_PATH.read_text(encoding="utf-8").strip()
     return text
 
-def log_turn(user_text, assistant_text, model_id):
+def extract_json_object(raw_text): #Now extracting the Json from the LLM output
+    text = str(raw_text or "").strip() 
+    if not text:
+        return None 
+    try: #We parse the whole thing first, hwoever this is unlikely that the LLM will output perfectly
+        return json.loads(text)
+    except Exception:
+        pass
+
+    start = text.find("{") #Failing that, we find the first json object and parse that
+    if start == -1:
+        return None
+
+    depth = 0
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}": #Finding the end of the json object
+            depth -= 1
+            if depth == 0:
+                chunk = text[start : i + 1]
+                try:
+                    return json.loads(chunk)
+                except Exception:
+                    return None
+    return None
+
+def validate_output(parsed): #Ensure it has the correct types
+    errors = []
+    if not isinstance(parsed, dict):
+        return False, None, ["Output is not a JSON object."]
+
+    required = {
+        "npc_dialogue": str,
+        "state_updates": dict,
+        "memory_summary": str,
+    }
+
+    for key, expected_type in required.items():
+        if key not in parsed:
+            errors.append(f"Missing required key: {key}")
+            continue
+        if not isinstance(parsed[key], expected_type):
+            errors.append(
+                f"Key '{key}' must be {expected_type.__name__}, got {type(parsed[key]).__name__}"
+            )
+
+    extra = set(parsed.keys()) - set(required.keys())
+    if extra:
+        errors.append(f"Unexpected keys present: {sorted(extra)}")
+
+    if errors:
+        return False, None, errors
+    return True, parsed, []
+
+def log_turn(user_text, prompt_text, raw_output, parsed_output, valid, errors, model_id):
     row = {
         "timestamp": time.time(),
         "model": model_id,
         "user_input": user_text,
-        "assistant_output": assistant_text,
+        "prompt": prompt_text,
+        "raw_output": raw_output,
+        "parsed_output": parsed_output,
+        "valid": valid,
+        "errors": errors,
     }
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
@@ -34,7 +93,7 @@ def log_turn(user_text, assistant_text, model_id):
 def main():
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1") #Stops the model printing progess bars 
     model_id = os.getenv("LOCAL_MODEL", "Qwen/Qwen2.5-0.5B-Instruct") #Model being used for the time being
-    max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "128")) #Max tokens, small for testing
+    max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "64")) #Max tokens, small for testing
 
     try:
         import torch
@@ -56,7 +115,7 @@ def main():
         print(f"Startup error: failed to load model ({exc})")
         return
 
-    print("Commit 3a - LLM chat ready. /quit or /exit to stop.")
+    print("Commit 3b - LLM JSON loop ready. /quit or /exit to stop.")
     messages = [{"role": "system", "content": "You are a concise, helpful assistant."}] #Conditioning for the LLM, small for testing
 
     prompt_template = load_prompt_template()
@@ -83,7 +142,10 @@ def main():
                     tokenize=False,
                     add_generation_prompt=True,
                 )
+            else:
+                full_prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages) + "\nassistant:" #
 
+            print("Generating...")
             inputs = tokenizer(full_prompt, return_tensors="pt")
             inputs = {k: v.to(model.device) for k, v in inputs.items()}#Moving to model's device for ease
 
@@ -103,8 +165,24 @@ def main():
                 assistant_text = "(empty response)"
 
             messages.append({"role": "assistant", "content": assistant_text})
-            log_turn(user_text, assistant_text, model_id)
-            print(f"LLM > {assistant_text}")
+            parsed = extract_json_object(assistant_text)
+            valid, parsed_output, errors = validate_output(parsed)
+            log_turn(
+                user_text,
+                prompt_text,
+                assistant_text,
+                parsed_output,
+                valid,
+                errors,
+                model_id,
+            )
+
+            if not valid:
+                print("LLM > (invalid JSON output)")
+                print(f"Errors: {errors}")
+                continue
+
+            print(f"LLM > {parsed_output['npc_dialogue']}")
         except Exception as exc:
             print(f"Generation error: {exc}")
 
