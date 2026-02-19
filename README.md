@@ -31,7 +31,14 @@ The dynamic loop currently expects:
 - `state_updates` (object)
 - `memory_summary` (string)
 
-If the model fails to produce valid JSON after retry, the session ends (no fallback mode).
+Validation now enforces:
+- required keys are present
+- key types are correct
+- unexpected keys are flagged
+
+If output is invalid:
+- the loop continues without crashing
+- validation errors are shown and logged
 
 ## Setup
 ```bash
@@ -61,45 +68,3 @@ Logged fields include:
 - parsed output
 - valid flag
 - validation errors
-
-## Research Roadmap (What Comes Next)
-The next commits will move toward a full constrained dialogue pipeline:
-
-1. **Short-term memory carry-over**
-- Keep recent validated turn summaries in context.
-- Improve local coherence without full retrieval yet.
-
-2. **State model + write-back**
-- Introduce explicit world state files (quests, inventory, NPC flags, location).
-- Apply only validated `state_updates` to state.
-
-3. **Lightweight retrieval (pre-RAG stage)**
-- Retrieve top-k relevant past events from logs using tags + recency.
-- Inject only relevant memories instead of full history.
-
-4. **RAG-style memory retrieval**
-- Move from naive history to retrieval-driven memory selection.
-- Evaluate whether retrieval improves consistency and perceived coherence.
-
-5. **Narrative arc constraints**
-- Add arc/checkpoint state (phase, required beats, deadlines).
-- Enforce beat progression and pacing at validation time.
-
-6. **Constraint layer expansion**
-- Schema validation -> world consistency checks -> arc compliance checks.
-- Regenerate when constraints fail.
-
-7. **Evaluation framework**
-- Compare constrained vs less-constrained conditions.
-- Use logs and user study metrics (coherence, consistency, responsiveness, detectability of handoff from hardcoded to LLM).
-
-## Why This Incremental Approach
-The project intentionally builds constraints in layers so each commit demonstrates one measurable step:
-- model runs locally
-- structured outputs
-- validation
-- choice-driven control
-- memory/retrieval
-- world + arc enforcement
-
-This supports a clear methodology narrative and makes results easier to analyze in the dissertation.
