@@ -4,7 +4,7 @@
 This project explores how to keep LLM-driven game dialogue coherent and controllable.
 The dissertation focus is on conditioning and constrained generation, moving from a simple local LLM loop to a structured dialogue pipeline.
 
-## Current State (Commit 4 - Choice Driven)
+## Current State (Commit 5a - Minor improvements)
 The current runtime is intentionally simple:
 
 1. A hardcoded prologue introduces the scenario and characters.
@@ -51,7 +51,6 @@ python game.py
 ```
 
 Optional environment variables:
-- `LOCAL_MODEL` (default: `Qwen/Qwen2.5-0.5B-Instruct`)
 - `LOCAL_MAX_NEW_TOKENS` (default defined in `src/llm_runtime.py`)
 
 ## Logging

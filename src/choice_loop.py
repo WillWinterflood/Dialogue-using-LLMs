@@ -16,6 +16,7 @@ from pathlib import Path
 
 PROMPT_PATH = Path("prompts/prompt_v1.txt")
 LOG_PATH = Path("dialogue_log.jsonl")
+LLM_THOUGHT_SECONDS = 3
 
 
 class ChoiceLoop:
@@ -36,6 +37,11 @@ class ChoiceLoop:
         self.turn = 0
         self.last_choices = []
         self.max_history_messages = 6
+
+    def _llm_thinking_pause(self):
+        #Small pause to simulate thinking
+        print("LLM is thinking...")
+        time.sleep(LLM_THOUGHT_SECONDS)
 
     def _safe_input(self, label):
         try:
@@ -196,7 +202,7 @@ class ChoiceLoop:
             self.turn += 1
             prompt_text = self._build_prompt(player_input)
 
-            print("Narrator: Thinking...")
+            print("LLM is thinking...")
             raw_output, parsed_output, valid, errors = self._generate_valid_json(prompt_text)
 
             self._log_turn(
@@ -219,10 +225,13 @@ class ChoiceLoop:
             self.last_memory_summary = parsed_output["memory_summary"]
 
             print(f"Narrator: {parsed_output['narrator']}")
+            self._llm_thinking_pause()
             print(f"{parsed_output['speaker']}: {parsed_output['reply']}")
+            self._llm_thinking_pause()
             self.last_choices = parsed_output["choices"]
             for i, text in enumerate(self.last_choices, start=1):
                 print(f"  {i}. {text}")
+                self._llm_thinking_pause()
 
             while True:
                 choice_raw = self._safe_input("Choice > ")
