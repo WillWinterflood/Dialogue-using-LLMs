@@ -11,7 +11,7 @@ import time
 
 class LocalLLM:
     def __init__(self):
-        self.model_id = os.getenv("LOCAL_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+        self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
         self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "128"))
         self.tokenizer = None
         self.model = None
