@@ -19,6 +19,9 @@ Thumbs.db
 # Local env and outputs
 .env
 exports/
+dialogue_log.jsonl
+data/state/world_state.json
+data/memory/*.jsonl
 
 # Hugging Face cache (optional local path)
 .cache/
