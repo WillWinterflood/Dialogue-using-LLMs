@@ -14,14 +14,15 @@ import time
 from pathlib import Path
 from src.text_fx import type_line #Typewriter thing as it makes it look better
 
-
 PROMPT_PATH = Path("prompts/prompt_v1.txt")
 LOG_PATH = Path("dialogue_log.jsonl")
-POST_RESPONSE_PAUSE_SECONDS = 0.2 # Small pause to allow for reading
+POST_RESPONSE_PAUSE_SECONDS = 0.2 #small pause to allow for reading
 PLAYER_CHOICE_SPEAK_SECONDS = 0.2
 MAX_JSON_RETRY_ATTEMPTS = 6
 LLM_CHOICES_PER_TURN = 2
-
+MEMORY_RECENT_TURNS = 5  #How many global turns to load for retrieval
+MEMORY_NPC_TURNS = 3 #How many NPC-specific turns to load for retrieval
+MEMORY_TOP_K = 4#how many memory summaries to inject into the prompt
 
 class ChoiceLoop:
     def __init__(
@@ -235,6 +236,32 @@ class ChoiceLoop:
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
 
+    def _retrieve_memories(self): #Loading and then also scoring them to find the most relevant memories  
+        recent = self.memory_store.load_recent_turns(MEMORY_RECENT_TURNS)
+        npc_turns = self.memory_store.load_npc_turns(self.current_npc, MEMORY_NPC_TURNS)
+
+        seen_turns = set()
+        combined = []
+        for event in recent + npc_turns:
+            t = event.get("turn")
+            if t not in seen_turns:
+                seen_turns.add(t)
+                combined.append(event)
+
+        def recency_score(event):
+            turns_ago = self.turn - event.get("turn", 0)
+            return 1.0 / (1 + max(0, turns_ago))
+
+        combined.sort(key=recency_score, reverse=True)
+        top = combined[:MEMORY_TOP_K]
+
+        summaries = []
+        for event in top:
+            summary = str(event.get("memory_summary", "")).strip()
+            if summary:
+                summaries.append(summary)
+        return summaries
+
     def _build_prompt(self, player_input):
         recent = self.messages[-4:]
         if recent:
@@ -254,11 +281,19 @@ class ChoiceLoop:
             "last_memory_summary": self.last_memory_summary,
         }
 
+        memories = self._retrieve_memories() #Retrieving 'relevant' memories to give the LLM next
+        if memories:
+            memory_block = "\n".join(f"- {s}" for s in memories)
+        else:
+            memory_block = "none"
+
         return (
             f"{self.prompt_template}\n\n" 
             f"{self.prologue_summary}\n\n" 
             "Canonical world state:\n" 
             f"{json.dumps(state_slice)}\n\n"
+            "Relevant past events:\n"
+            f"{memory_block}\n\n"
             "Recent context:\n"
             f"{recent_text}\n\n"
             f"Turn: {self.turn}\n"

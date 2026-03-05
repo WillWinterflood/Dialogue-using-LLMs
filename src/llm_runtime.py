@@ -11,8 +11,15 @@ import time
 
 class LocalLLM:
     def __init__(self):
-        self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
-        self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "128"))
+        self.model_id = os.getenv("LOCAL_MODEL_ID", "").strip()
+        self.max_new_tokens = None
+        raw_tokens = os.getenv("LOCAL_MAX_NEW_TOKENS", "").strip()
+        if raw_tokens:
+            try:
+                self.max_new_tokens = max(16, int(raw_tokens))
+            except Exception:
+                self.max_new_tokens = None
+        self.device = "cuda"
         self.tokenizer = None
         self.model = None
         self.torch = None
@@ -26,22 +33,46 @@ class LocalLLM:
         except Exception as exc:
             raise RuntimeError(f"transformers/torch missing ({exc})")
 
-        self.torch = torch 
+        self.torch = torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is unavailable. This runtime requires a CUDA-capable GPU.")
+        
+        #Can change this for other gpus
+        self.device = "cuda" #Only suppoting CUDA which means running on my NVIDIA GPU, this is most common
+
+        if not self.model_id:
+            self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
+
+        if self.max_new_tokens is None:
+            self.max_new_tokens = 96
 
         t0 = time.time() #Timing how long it takes to load
         print(f"Loading local model: {self.model_id}")
+
+        model_dtype = torch.float16
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_id) #download tokeniser
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_id,
+            dtype=model_dtype,
+        )
+        self.model.to(self.device)
         self.model.eval() 
 
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Safe speed knobs for NVIDIA cards.
+        torch.backends.cuda.matmul.allow_tf32 = True  #Speeds up LLM as it speeds up matrix multiplications...
+        torch.backends.cudnn.allow_tf32 = True
 
         self.model.generation_config.temperature = None #no sampling, to keep simple for now
         self.model.generation_config.top_p = None
         self.model.generation_config.top_k = None
 
         elapsed = time.time() - t0
+        print(f"Runtime device: {self.device}")
+        print(f"Max new tokens: {self.max_new_tokens}")
         print(f"Local LLM ready in {elapsed:.1f}s.") #Debug
 
     def generate(self, messages): #Expecting lists of dicts with role and content
