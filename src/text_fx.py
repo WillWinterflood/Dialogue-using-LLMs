@@ -6,7 +6,7 @@ Small CLI effect on the text to help people read it better and for better user e
 import os
 import time
 
-DEFAULT_CHAR_DELAY_SECONDS = os.getenv("TYPEWRITER_CHAR_DELAY", "0.1")
+DEFAULT_CHAR_DELAY_SECONDS = os.getenv("TYPEWRITER_CHAR_DELAY", "0.05")
 DEFAULT_LINE_PAUSE_SECONDS = os.getenv("TYPEWRITER_LINE_PAUSE", "0.5")
 
 def _safe_float(raw_value, fallback):

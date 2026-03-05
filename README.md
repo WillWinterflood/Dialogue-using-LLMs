@@ -2,20 +2,20 @@
 
 ## Overview
 This project explores how to keep LLM-driven game dialogue coherent and controllable.
-The dissertation focus is on conditioning and constrained generation, moving from a simple local LLM loop to a structured dialogue pipeline.
+The dissertation focus is on conditioning + constrained generation, moving from a simple local loop to a structured dialogue pipeline with persistent state and memory retrieval.
 
-## Current State (Commit 5b - Persistent state foundation)
-The current runtime is intentionally simple:
+## Current State
+The current runtime flow:
 
 1. A hardcoded prologue introduces the scenario and characters.
 2. The player selects scripted prologue choices.
-3. Control is handed to a local LLM.
-4. The LLM must return strict JSON.
-5. JSON is parsed and validated.
-6. Dialogue and numbered choices are shown.
-7. The player must select a choice number.
-8. World state is saved each turn.
-9. Turn memories are appended to JSONL files for later retrieval work.
+3. Dynamic mode starts with a local LLM.
+4. The loop retrieves recent global turns + NPC turns, then injects top summaries into the prompt.
+5. The LLM must return strict JSON.
+6. JSON is parsed/validated with retry-on-invalid.
+7. Dialogue and exactly 2 numbered choices are shown.
+8. The player selects a choice number.
+9. Canonical world state + memory logs are persisted each turn.
 
 Current files:
 - `game.py`: thin entrypoint
@@ -31,31 +31,46 @@ The dynamic loop currently expects:
 - `narrator` (string)
 - `speaker` (string)
 - `reply` (string)
-- `choices` (list, 2-4 items)
+- `choices` (list, exactly 2 items)
 - `state_updates` (object)
 - `memory_summary` (string)
 
 Validation now enforces:
 - required keys are present
 - key types are correct
-- unexpected keys are flagged
+- `speaker` matches current NPC
+- `reply` is non-empty and not a verbatim copy of player input
+- `choices` contain exactly 2 non-empty lines after cleaning
 
 If output is invalid:
-- the loop continues without crashing
-- validation errors are shown and logged
+- the loop retries with a repair instruction
+- if still invalid after max retries, the session exits safely
 
-## Setup
+## Requirements
+- Python 3.10+
+- NVIDIA GPU with CUDA available (runtime is CUDA-only)
+
+## Setup (PowerShell)
 ```bash
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
 ## Run
 ```bash
-python game.py
+py -3 game.py
 ```
 
 Optional environment variables:
-- `LOCAL_MAX_NEW_TOKENS` (default defined in `src/llm_runtime.py`)
+- `LOCAL_MODEL_ID` (default: `Qwen/Qwen2.5-1.5B-Instruct`)
+- `LOCAL_MAX_NEW_TOKENS` (default: `96`)
+
+## Retrieval Knobs
+Current retrieval parameters in `src/choice_loop.py`:
+- `MEMORY_RECENT_TURNS = 5`
+- `MEMORY_NPC_TURNS = 3`
+- `MEMORY_TOP_K = 4`
 
 ## Logging
 Each turn is appended to:
@@ -63,7 +78,7 @@ Each turn is appended to:
 - `data/memory/turns.jsonl`
 - `data/memory/<npc_name>.jsonl`
 
-snapshot is saved to:
+State snapshot is saved to:
 - `data/state/world_state.json`
 
 Logged fields include:
