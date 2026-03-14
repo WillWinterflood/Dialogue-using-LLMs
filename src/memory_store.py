@@ -6,11 +6,18 @@ Each turn is appended to JSONL files so memory persists between sessions
 """
 
 import json
+import re 
 from pathlib import Path
 
 class MemoryStore:
     def __init__(self, root="data/memory"): #Folder where the memory files are
         self.root = Path(root)
+
+    def _safe_npc_filename(self, npc_name): #Making a different jsonl file for each npc, for context blocks
+        raw = str(npc_name or "").strip().lower()
+        safe = re.sub(r"[^a-z0-9_-]+", "_", raw)
+        safe = re.sub(r"_+", "_", safe).strip("_")
+        return safe or "unknown_npc"
 
     def _append_jsonl(self, path, row): #Appending a row in a jsonl file and then creating the file
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,13 +44,31 @@ class MemoryStore:
                 break
         return list(reversed(rows))
 
+    def _read_all_jsonl(self, path):
+        if not path.exists():
+            return []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return []
+        rows = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+        return rows
+
     def append_turn(self, row): 
         self._append_jsonl(self.root / "turns.jsonl", row)
 
     def append_npc_memory(self, npc_name, row):
         if not npc_name:
             return
-        safe_name = str(npc_name).strip().lower().replace(" ", "_")
+        safe_name = self._safe_npc_filename(npc_name)
         self._append_jsonl(self.root / f"{safe_name}.jsonl", row)
 
     def load_last_turn(self): #loading the last save
@@ -61,11 +86,20 @@ class MemoryStore:
     def load_recent_turns(self, n=5):
         return self._read_jsonl(self.root / "turns.jsonl", n)
 
+    def load_all_turns(self):
+        return self._read_all_jsonl(self.root / "turns.jsonl")
+
     def load_npc_turns(self, npc_name, n=3):
         if not npc_name: 
             return []
-        safe_name = str(npc_name).strip().lower().replace(" ", "_")
+        safe_name = self._safe_npc_filename(npc_name)
         return self._read_jsonl(self.root / f"{safe_name}.jsonl", n)
+
+    def load_all_npc_turns(self, npc_name):
+        if not npc_name:
+            return []
+        safe_name = self._safe_npc_filename(npc_name)
+        return self._read_all_jsonl(self.root / f"{safe_name}.jsonl")
 
     def reset(self): #Starting fresh and removing all memory files
         if not self.root.exists(): 

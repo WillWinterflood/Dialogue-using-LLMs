@@ -45,7 +45,7 @@ class LocalLLM:
             self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
 
         if self.max_new_tokens is None:
-            self.max_new_tokens = 96
+            self.max_new_tokens = 128
 
         t0 = time.time() #Timing how long it takes to load
         print(f"Loading local model: {self.model_id}")
@@ -104,3 +104,12 @@ class LocalLLM:
         if not text:
             return "(empty response)"
         return text
+
+    def count_tokens_text(self, text): 
+        if not self.tokenizer:
+            return max(1, len(str(text or "").split()))
+        try:
+            tokens = self.tokenizer(str(text or ""), return_tensors="pt")
+            return int(tokens["input_ids"].shape[1])
+        except Exception:
+            return max(1, len(str(text or "").split()))
