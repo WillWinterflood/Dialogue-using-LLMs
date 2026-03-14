@@ -12,10 +12,11 @@ The current runtime flow:
 3. Dynamic mode starts with a local LLM.
 4. The loop retrieves recent global turns + NPC turns, then injects top summaries into the prompt.
 5. The LLM must return strict JSON.
-6. JSON is parsed/validated with retry-on-invalid.
-7. Dialogue and exactly 2 numbered choices are shown.
-8. The player selects a choice number.
-9. Canonical world state + memory logs are persisted each turn.
+6. Deterministic story rules handle canonical quest/scene progression before the prompt is built.
+7. JSON is parsed/validated with retry-on-invalid.
+8. Dialogue and 2-3 numbered choices are shown, with at least one directed progress option when needed.
+9. The player selects a choice number.
+10. Canonical world state + memory logs are persisted each turn.
 
 Current files:
 - `game.py`: thin entrypoint
@@ -31,7 +32,7 @@ The dynamic loop currently expects:
 - `narrator` (string)
 - `speaker` (string)
 - `reply` (string)
-- `choices` (list, exactly 2 items)
+- `choices` (list, 2-3 items)
 - `state_updates` (object)
 - `memory_summary` (string)
 
@@ -40,15 +41,16 @@ Validation now enforces:
 - key types are correct
 - `speaker` matches current NPC
 - `reply` is non-empty and not a verbatim copy of player input
-- `choices` contain exactly 2 non-empty lines after cleaning
+- `choices` contain 2-3 non-empty items after cleaning
+- `state_updates` are treated as low-authority ambient hints only
 
 If output is invalid:
 - the loop retries with a repair instruction
-- if still invalid after max retries, the session exits safely
+- if still invalid after max retries, a safe fallback turn is used
 
 ## Requirements
 - Python 3.10+
-- NVIDIA GPU with CUDA available (runtime is CUDA-only)
+- NVIDIA GPU with CUDA available (runtime is CUDA-only) -> can be changed for other GPUs
 
 ## Setup (PowerShell)
 ```bash
@@ -68,8 +70,8 @@ Optional environment variables:
 
 ## Retrieval Knobs
 Current retrieval parameters in `src/choice_loop.py`:
-- `MEMORY_RECENT_TURNS = 5`
-- `MEMORY_NPC_TURNS = 3`
+- `MEMORY_RECENT_TURNS = 8`
+- `MEMORY_NPC_TURNS = 20`
 - `MEMORY_TOP_K = 4`
 
 ## Logging
@@ -91,4 +93,3 @@ Logged fields include:
 - parsed output
 - valid flag
 - validation errors
-
