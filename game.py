@@ -20,14 +20,13 @@ LOG_PATH = Path("dialogue_log.jsonl")
 def _choose_saved_state_action(): #Asking user whether they want to continue from the last saved or reset
     print("Saved world state found.")
     print("  1) Continue previous session")
-    print("  2) Start new game")
-    print("  3) Delete history and logs")
+    print("  2) Restart game and reset history/logs")
 
     while True:
         raw = input("Choice > ").strip()
-        if raw in {"1", "2", "3"}:
+        if raw in {"1", "2"}:
             return raw
-        print("Enter 1, 2 or 3.")
+        print("Enter 1 or 2.")
 
 
 def _append_scripted_log(event, index):
@@ -110,17 +109,12 @@ def main():
             current_location = saved_state.get("current_location", "Market Gate")
             world_state = saved_state
             resume_mode = True
-        elif choice == "2":
-            print("Starting a new game.")
+        else:
+            print("Restarting game and clearing history/logs.")
             _reset_runtime_data(state_store, memory_store)
             prologue_summary, initial_player_choice, world_state, resume_mode = _start_new_game(state_store, memory_store)
             current_npc = world_state.get("current_npc", "Eli")
             current_location = world_state.get("current_location", "Market Gate")
-        else:
-            print("Deleting history and logs.")
-            _reset_runtime_data(state_store, memory_store)
-            print("History deleted.")
-            return
     else:
         prologue_summary, initial_player_choice, world_state, resume_mode = _start_new_game(state_store, memory_store)
         current_npc = world_state.get("current_npc", "Eli")
