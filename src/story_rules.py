@@ -15,14 +15,11 @@ DEFAULT_QUEST_FLAGS = {
     "truth_reported": False,
 }
 
-
 def _normalize_text(value):
     return " ".join(str(value or "").strip().lower().split())
 
-
 def _has_any(text, needles):
     return any(needle in text for needle in needles)
-
 
 def _normalize_choice(choice):
     if not isinstance(choice, dict):
@@ -32,7 +29,6 @@ def _normalize_choice(choice):
         "text": _normalize_text(choice.get("text")),
         "action_type": _normalize_text(choice.get("action_type")),
     }
-
 
 def canonicalize_story_state(state):
     if not isinstance(state, dict):
@@ -72,7 +68,6 @@ def canonicalize_story_state(state):
         cleaned_inventory.append(LEDGER_EVIDENCE)
     out["inventory"] = cleaned_inventory
     return out
-
 
 def suggest_story_choices(world_state, current_npc, current_location):
     state = canonicalize_story_state(world_state)
@@ -130,7 +125,6 @@ def suggest_story_choices(world_state, current_npc, current_location):
             }
         )
     return suggestions
-
 
 def apply_story_choice(world_state, player_choice, current_npc, current_location):
     state = canonicalize_story_state(world_state)
@@ -241,3 +235,4 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effects["active_quests"][CORE_QUEST_ID] = "active"
 
     return effects
+
