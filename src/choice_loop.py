@@ -29,11 +29,13 @@ POST_RESPONSE_PAUSE_SECONDS = 0.2 #small pause to allow for reading
 PLAYER_CHOICE_SPEAK_SECONDS = 0.2
 MAX_JSON_RETRY_ATTEMPTS = 2
 MIN_LLM_CHOICES = 2
-MAX_LLM_CHOICES = 3
+MAX_LLM_CHOICES = 2
 MEMORY_RECENT_TURNS = 8  #How many global turns to load for retrieval
 MEMORY_NPC_TURNS = 20 #How many NPC-specific turns to load for retrieval
-MEMORY_TOP_K = 4#how many memory summaries to inject into the prompt
-MEMORY_TOKEN_BUDGET = 220 #Max tokens to spend on memory summaries, in order to not fill the prompt with too much memory
+MEMORY_TOP_K = 2#how many memory summaries to inject into the prompt
+MEMORY_TOKEN_BUDGET = 120 #Max tokens to spend on memory summaries, in order to not fill the prompt with too much memory
+PROMPT_RECENT_MESSAGES = 2
+FALLBACK_MEMORY_PREFIX = "Fallback response used while speaking with "
 
 #Changed some of these to be good for a game, whereas before it was more for LLM capabilities, forexample there is so many more action types that are relevant
  
@@ -122,7 +124,6 @@ class ChoiceLoop:
         except Exception:
             self.turn = 0 
         self.last_choices = self._coerce_choice_list(self.world_state.get("last_choices", []))
-        self.max_history_messages = 8
         self.current_player_choice = {} #Tracking the latest choice object
         self.last_retrieval = {
             "query": {},
@@ -132,6 +133,7 @@ class ChoiceLoop:
             "prompt_tokens": 0,
         }
         self.last_rule_effects = {"applied_rules": [], "milestones": []}
+        self.pending_story_narration = ""
 
     def _safe_input(self, label):
         try:
@@ -201,6 +203,8 @@ class ChoiceLoop:
             choice = self._normalise_choice(raw_choice, fallback_index=idx)
             if choice:
                 cleaned.append(choice)
+            if len(cleaned) >= MAX_LLM_CHOICES:
+                break
         return cleaned
 
     def _choice_key(self, choice):
@@ -333,6 +337,7 @@ class ChoiceLoop:
     def _apply_story_choice_rules(self, player_choice): #
         effects = apply_story_choice(self.world_state, player_choice, self.current_npc, self.current_location)
         self.last_rule_effects = effects
+        self.pending_story_narration = ""
         if not isinstance(effects, dict):
             self.last_rule_effects = {"applied_rules": [], "milestones": []}
             return
@@ -384,6 +389,11 @@ class ChoiceLoop:
         self.world_state["current_npc"] = self.current_npc
         self.world_state = canonicalize_story_state(self.world_state)
         self._advance_arc_for_milestones(effects.get("milestones", []))
+        narrator_lines = effects.get("narrator_lines", [])
+        if isinstance(narrator_lines, list):
+            text = " ".join(str(line).strip() for line in narrator_lines if str(line).strip())
+            if text:
+                self.pending_story_narration = text
 
     def _prompt_for_choice(self):
         while True:
@@ -464,6 +474,48 @@ class ChoiceLoop:
                 reply_clean = reply_clean[:117].rstrip() + "..."
             return f"{speaker} replied at {location}: {reply_clean}"
         return f"{speaker} spoke with Alex at {location}."
+
+    def _build_auto_narrator(self, speaker_text):
+        location = str(self.current_location or "current location").strip()
+        speaker = speaker_text.strip() or str(self.current_npc or "Someone").strip() or "Someone"
+
+        location_line = {
+            "Market Gate": "Rain slicks the Market Gate while carts groan through the puddled dark.",
+            "Old Library": "Stormwater taps through cracked glass as the Old Library settles into a tense hush.",
+        }.get(location, f"The air stays tense around {location}.")
+
+        speaker_line = {
+            "Eli": "Eli keeps one shoulder angled toward the street, as if he expects trouble to come looking for him.",
+            "Mara": "Mara waits by the archive desk with the stillness of someone already weighing the truth.",
+        }.get(speaker, f"{speaker} watches you closely before answering.")
+
+        return f"{location_line} {speaker_line}"
+
+    def _apply_pending_story_narration(self, parsed_output):
+        if not isinstance(parsed_output, dict):
+            return parsed_output
+
+        bridge = str(self.pending_story_narration or "").strip()
+        narrator = str(parsed_output.get("narrator", "")).strip()
+        if bridge:
+            if narrator and bridge.lower() not in narrator.lower():
+                parsed_output["narrator"] = f"{bridge} {narrator}".strip()
+            elif not narrator:
+                parsed_output["narrator"] = bridge
+
+        self.pending_story_narration = ""
+        return parsed_output
+
+    def _is_fallback_event(self, event):
+        if not isinstance(event, dict):
+            return False
+
+        event_type = str(event.get("event_type", "")).strip().lower()
+        if event_type == "fallback":
+            return True
+
+        memory_summary = str(event.get("memory_summary", "")).strip().lower()
+        return memory_summary.startswith(FALLBACK_MEMORY_PREFIX.lower())
 
     def _known_npc_map(self): #Building a map on known npcs
         known = {}
@@ -588,6 +640,8 @@ class ChoiceLoop:
             errors.append(f"Dialogue mode: speaker must be current_npc '{active_npc}'.")
         if current_choice_text and reply_text.lower() == current_choice_text:
             errors.append("Dialogue mode: reply must not repeat the player's selected line verbatim.")
+        if not narrator_text:
+            narrator_text = self._build_auto_narrator(speaker_text or active_npc)
 
         raw_choices = parsed.get("choices")
         if not isinstance(raw_choices, list):
@@ -615,7 +669,7 @@ class ChoiceLoop:
         cleaned_choices = self._enforce_progress_choice(cleaned_choices)
         cleaned_choices = self._inject_story_choice(cleaned_choices)
         if not (MIN_LLM_CHOICES <= len(cleaned_choices) <= MAX_LLM_CHOICES):
-            errors.append(f"choices must contain between {MIN_LLM_CHOICES} and {MAX_LLM_CHOICES} items")
+            errors.append(f"choices must contain exactly {MIN_LLM_CHOICES} items")
 
         cleaned_updates, update_errors = self._sanitize_state_updates(parsed.get("state_updates", {}))
         errors.extend(update_errors)
@@ -780,6 +834,8 @@ class ChoiceLoop:
         seen_ids = set()
         combined = []
         for event in npc_turns + recent:
+            if self._is_fallback_event(event):
+                continue
             event_id = str(event.get("event_id", "")).strip() or f"legacy_{event.get('turn', 0)}_{len(combined)}"
             if event_id in seen_ids:
                 continue
@@ -826,7 +882,7 @@ class ChoiceLoop:
         return summaries
 
     def _build_prompt(self, player_choice):
-        recent = self.messages[-4:]
+        recent = [m for m in self.messages if m.get("role") != "system"][-PROMPT_RECENT_MESSAGES:]
         if recent:
             recent_text = "\n".join(f"{m['role']}: {m['content']}" for m in recent)
         else:
@@ -840,8 +896,7 @@ class ChoiceLoop:
             "active_quests": self.world_state.get("active_quests", {}),
             "quest_flags": self.world_state.get("quest_flags", {}),
             "inventory": self.world_state.get("inventory", []),
-            "npc_relationships": self.world_state.get("npc_relationships", {}),
-            "last_memory_summary": self.last_memory_summary,
+            "last_narrator": self.world_state.get("last_narrator", ""),
         }
 
         memories = self._retrieve_memories(player_choice) #Retrieving 'relevant' memories to give the LLM next
@@ -851,16 +906,18 @@ class ChoiceLoop:
             memory_block = "none"
 
         arc_state = self._current_arc_state()
-        known_npcs = sorted(set(self._known_npc_map().values()))
         known_locations = sorted(set(self._known_location_map().values()))
         known_quests = sorted(self.world_state.get("active_quests", {}).keys())
-        known_flags = sorted(self.world_state.get("quest_flags", {}).keys())
+        story_transition = self.pending_story_narration or "none"
 
         prompt = (
             f"{self.prompt_template}\n\n" 
+            "PROLOGUE:\n"
             f"{self.prologue_summary}\n\n" 
-            "HARD FACTS:\n" 
-            f"{json.dumps(state_slice)}\n\n"
+            "CURRENT STORY BEAT:\n"
+            f"{story_transition}\n\n"
+            "STATE:\n" 
+            f"{json.dumps(state_slice, separators=(',', ':'))}\n\n"
             "PLAYER ACTION:\n"
             f"- choice_id: {player_choice.get('id')}\n"
             f"- action_type: {player_choice.get('action_type')}\n"
@@ -870,26 +927,21 @@ class ChoiceLoop:
             f"- next_required_beat: {arc_state.get('next_required_beat') or 'none'}\n"
             f"- next_required_goal: {arc_state.get('next_required_goal')}\n"
             f"- beat_deadline_turn: {arc_state.get('beat_deadline_turn')}\n"
-            f"- steering_strength: {arc_state.get('steering_strength', 'soft')}\n"
-            f"- completed_beats: {', '.join(arc_state.get('completed_beats', [])) or 'none'}\n\n"
+            f"- steering_strength: {arc_state.get('steering_strength', 'soft')}\n\n"
             "RELEVANT MEMORIES:\n"
             f"{memory_block}\n\n"
             "RECENT CONTEXT:\n"
             f"{recent_text}\n\n"
-            f"Turn: {self.turn}\n"
-            f"Current NPC: {self.current_npc}\n"
-            f"Current location: {self.current_location}\n"
-            "WORLD CONSISTENCY RULES:\n"
+            "WORLD RULES:\n"
+            f"- turn: {self.turn}\n"
+            f"- known locations are: {', '.join(known_locations) if known_locations else 'none'}\n"
+            f"- active quest ids in memory are: {', '.join(known_quests) if known_quests else 'none'}\n"
             f"- only use these state_updates keys: {', '.join(sorted(ALLOWED_STATE_UPDATE_KEYS))}\n"
             "- use state_updates only for small ambient changes such as time passing.\n"
             "- do not change quest status, inventory, current_npc, or current_location in state_updates.\n"
-            f"- active NPCs in this scene are: {', '.join(known_npcs) if known_npcs else 'none'}\n"
-            f"- known locations are: {', '.join(known_locations) if known_locations else 'none'}\n"
-            f"- active quest ids in memory are: {', '.join(known_quests) if known_quests else 'none'}\n"
-            f"- quest flags currently tracked are: {', '.join(known_flags) if known_flags else 'none'}\n"
             f"- time_of_day must be one of: {', '.join(sorted(VALID_TIME_OF_DAY))}\n\n"
             "CHOICE QUALITY GUARDRAILS:\n"
-            "- choices must be 2-3 unique objects with id, text, action_type.\n"
+            "- choices must be exactly 2 unique objects with id, text, action_type.\n"
             "- if choices are repeating from the previous turn, replace one with a concrete next-step question.\n"
             "- include at least one concrete lead, travel, or evidence-focused next step when possible."
         )
@@ -934,7 +986,8 @@ class ChoiceLoop:
         self.world_state["last_player_action"] = player_choice.get("text", "")
         self.world_state["last_choice_id"] = player_choice.get("id", "")
         self.world_state["last_choice_text"] = player_choice.get("text", "")
-        self.world_state["last_memory_summary"] = parsed_output.get("memory_summary", "")
+        if not self._is_fallback_event(parsed_output):
+            self.world_state["last_memory_summary"] = parsed_output.get("memory_summary", "")
         self.world_state["turn"] = self.turn
         self.world_state = canonicalize_story_state(self.world_state)
 
@@ -979,8 +1032,9 @@ class ChoiceLoop:
             ],
             "rule_effects": self.last_rule_effects,
         }
-        self.memory_store.append_turn(event)
-        self.memory_store.append_npc_memory(parsed_output.get("speaker"), event)
+        if not self._is_fallback_event(event):
+            self.memory_store.append_turn(event)
+            self.memory_store.append_npc_memory(parsed_output.get("speaker"), event)
 
     def _show_resume_context(self):
         #Printing context so the user can see where they are resuming from
@@ -1032,7 +1086,7 @@ class ChoiceLoop:
             "Give me a moment. I can stay useful if we focus on one concrete lead, one witness, "
             "or one place to inspect next."
         )
-        memory_summary = f"Fallback response used while speaking with {self.current_npc} at {self.current_location}."
+        memory_summary = f"{FALLBACK_MEMORY_PREFIX}{self.current_npc} at {self.current_location}."
         return {
             "narrator": "",
             "speaker": str(self.current_npc or "NPC").strip() or "NPC",
@@ -1048,8 +1102,7 @@ class ChoiceLoop:
         }
 
     def _generate_valid_json(self, prompt_text): #Generating the json output and some schema validation
-        history = self.messages[-self.max_history_messages:]
-        base_messages = history + [{"role": "user", "content": prompt_text}]
+        base_messages = [self.messages[0], {"role": "user", "content": prompt_text}]
         last_raw = ""
         last_errors = []
 
@@ -1065,8 +1118,10 @@ class ChoiceLoop:
                         f"Fix these errors exactly: {json.dumps(last_errors)}\n"
                         f"Use this exact speaker value: {self.current_npc}\n"
                         "Never set speaker to Alex.\n"
+                        "Keep the reply to one or two short sentences.\n"
+                        "Use an empty string for narrator if no narration is needed.\n"
                         "Do not repeat the player's selected line in reply.\n"
-                        "Choices must be 2-3 objects with keys id, text, action_type.\n"
+                        "Choices must be exactly 2 objects with keys id, text, action_type.\n"
                         "Do not change quest status, inventory, current_npc, or current_location in state_updates.\n"
                         f"Current beat: {arc_state.get('next_required_beat') or 'none'}.\n"
                         "No markdown fences. No explanation. JSON object only."
@@ -1117,6 +1172,8 @@ class ChoiceLoop:
 
             print(self._thinking_label())
             raw_output, parsed_output, valid, errors = self._generate_valid_json(prompt_text)
+            if valid:
+                parsed_output = self._apply_pending_story_narration(parsed_output)
 
             self._log_turn(
                 player_choice,
@@ -1132,12 +1189,14 @@ class ChoiceLoop:
                 return
 
             self.messages.append({"role": "user", "content": f"{player_choice.get('id')}: {player_choice.get('text')}"})
-            self.last_memory_summary = parsed_output["memory_summary"]
+            if not self._is_fallback_event(parsed_output):
+                self.last_memory_summary = parsed_output["memory_summary"]
             if parsed_output["narrator"]:
                 type_line(f"Narrator: {parsed_output['narrator']}")
             if parsed_output["speaker"] and parsed_output["reply"]:
                 type_line(f"{parsed_output['speaker']}: {parsed_output['reply']}")
-            self.messages.append({"role": "assistant", "content": f"{parsed_output['speaker']}: {parsed_output['reply']}"})
+            if not self._is_fallback_event(parsed_output):
+                self.messages.append({"role": "assistant", "content": f"{parsed_output['speaker']}: {parsed_output['reply']}"})
             self.last_choices = parsed_output["choices"]
             for i, choice in enumerate(self.last_choices, start=1):
                 type_line(f"  {i}. {choice['text']}")
@@ -1152,4 +1211,3 @@ class ChoiceLoop:
             player_choice = self._prompt_for_choice()
             if player_choice is None:
                 return
-

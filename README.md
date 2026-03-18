@@ -14,7 +14,7 @@ The current runtime flow:
 5. The LLM must return strict JSON.
 6. Deterministic story rules handle canonical quest/scene progression before the prompt is built.
 7. JSON is parsed/validated with retry-on-invalid.
-8. Dialogue and 2-3 numbered choices are shown, with at least one directed progress option when needed.
+8. Dialogue and 2 numbered choices are shown, with at least one directed progress option when needed.
 9. The player selects a choice number.
 10. Canonical world state + memory logs are persisted each turn.
 
@@ -32,7 +32,7 @@ The dynamic loop currently expects:
 - `narrator` (string)
 - `speaker` (string)
 - `reply` (string)
-- `choices` (list, 2-3 items)
+- `choices` (list, 2 items)
 - `state_updates` (object)
 - `memory_summary` (string)
 
@@ -41,7 +41,7 @@ Validation now enforces:
 - key types are correct
 - `speaker` matches current NPC
 - `reply` is non-empty and not a verbatim copy of player input
-- `choices` contain 2-3 non-empty items after cleaning
+- `choices` contain 2 non-empty items after cleaning
 - `state_updates` are treated as low-authority ambient hints only
 
 If output is invalid:

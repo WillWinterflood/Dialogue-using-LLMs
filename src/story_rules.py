@@ -151,6 +151,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         "npc_relationships": {},
         "milestones": [],
         "applied_rules": [],
+        "narrator_lines": [],
     }
 
     interactive_actions = {"ask", "investigate", "accuse", "reassure", "threaten", "trade", "resume"}
@@ -158,12 +159,23 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effects["quest_flags"]["met_eli"] = True
         effects["milestones"].append("met_eli")
         effects["applied_rules"].append("met_eli")
+        effects["narrator_lines"].append(
+            "Eli lingers beneath the Market Gate awning, speaking low while wagons grind past in the rain."
+        )
 
     travel_to_library = (
         choice_id in {"travel_old_library", "report_to_mara"}
         or (
-            action_type in {"travel", "investigate"}
-            and _has_any(choice_text, ("old library", "ledger 7c", "mara"))
+            action_type == "travel"
+            and _has_any(
+                choice_text,
+                (
+                    "old library",
+                    "back to mara",
+                    "report to mara",
+                    "take this evidence back to mara",
+                ),
+            )
         )
     )
     if travel_to_library:
@@ -171,6 +183,9 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effects["current_npc"] = "Mara"
         effects["known_locations"].append("Old Library")
         effects["applied_rules"].append("travel_old_library")
+        effects["narrator_lines"].append(
+            "You leave the Market Gate behind and cut back through the rain to the Old Library, where Mara waits beneath cracked glass."
+        )
 
     effective_location = effects["current_location"] or str(current_location or "").strip()
     effective_npc = effects["current_npc"] or str(current_npc or "").strip()
@@ -192,6 +207,9 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effects["milestones"].append("found_ledger_clue")
         effects["applied_rules"].append("inspect_ledger_7c")
         effective_flags["found_ledger_clue"] = True
+        effects["narrator_lines"].append(
+            "Mara spreads ledger 7C across the archive desk. The seal has been broken and pressed shut again in haste."
+        )
 
     reports_truth = (
         effective_location == "Old Library"
@@ -216,6 +234,9 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effects["active_quests"][CORE_QUEST_ID] = "completed"
         effects["milestones"].append("truth_reported")
         effects["applied_rules"].append("report_truth_to_mara")
+        effects["narrator_lines"].append(
+            "The library falls quiet as you lay the tampered ledger between you and Mara and force the truth into the open."
+        )
     else:
         effects["active_quests"][CORE_QUEST_ID] = "active"
 

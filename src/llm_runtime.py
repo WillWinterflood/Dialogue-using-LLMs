@@ -45,7 +45,7 @@ class LocalLLM:
             self.model_id = "Qwen/Qwen2.5-1.5B-Instruct"
 
         if self.max_new_tokens is None:
-            self.max_new_tokens = 128
+            self.max_new_tokens = 192
 
         t0 = time.time() #Timing how long it takes to load
         print(f"Loading local model: {self.model_id}")
