@@ -5,7 +5,7 @@ Required keys:
 - narrator: string
 - speaker: string
 - reply: string
-- choices: array of exactly 2 objects with keys id, text, action_type
+- choices: array of 1 or 2 objects with keys id, text, action_type
 - state_updates: object
 - memory_summary: string
 
@@ -14,7 +14,7 @@ Turn rules:
 - reply must be 1-2 short sentences and add specific information
 - narrator should briefly ground the current scene, movement, or tension
 - never repeat the player's selected line verbatim
-- return exactly 2 choices
+- return 1 or 2 choices depending on the beat instructions
 - choices must be short natural lines Alex can say out loud
 - every choice id must be stable snake_case
 - action_type must be one of: ask, investigate, travel, accuse, reassure, threaten, trade, exit

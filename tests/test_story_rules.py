@@ -2,6 +2,7 @@ from src.story_rules import (
     LEDGER_EVIDENCE,
     apply_story_choice,
     canonicalize_story_state,
+    forced_story_choices,
     suggest_story_choices,
 )
 
@@ -115,7 +116,7 @@ def test_market_gate_ledger_question_does_not_force_scene_jump_to_mara():
 def test_suggest_story_choices_offers_a_directed_progress_option():
     choices = suggest_story_choices(
         {
-            "quest_flags": {"met_eli": False, "found_ledger_clue": False, "truth_reported": False},
+            "quest_flags": {"met_eli": False, "found_ledger_clue": False, "truth_reported": False, "case_closed": False},
             "active_quests": {"echo_shard": "active"},
         },
         current_npc="Eli",
@@ -124,3 +125,51 @@ def test_suggest_story_choices_offers_a_directed_progress_option():
 
     choice_ids = {choice["id"] for choice in choices}
     assert "travel_old_library" in choice_ids
+
+
+def test_forced_story_choices_lock_library_progression_and_closure():
+    inspect_choices = forced_story_choices(
+        {
+            "quest_flags": {"met_eli": True, "found_ledger_clue": False, "truth_reported": False, "case_closed": False},
+            "active_quests": {"echo_shard": "active"},
+        },
+        current_npc="Mara",
+        current_location="Old Library",
+    )
+    assert [choice["id"] for choice in inspect_choices] == ["inspect_ledger_7c"]
+
+    close_choices = forced_story_choices(
+        {
+            "quest_flags": {"met_eli": True, "found_ledger_clue": True, "truth_reported": True, "case_closed": False},
+            "active_quests": {"echo_shard": "completed"},
+        },
+        current_npc="Mara",
+        current_location="Old Library",
+    )
+    assert [choice["id"] for choice in close_choices] == ["close_case"]
+
+
+def test_close_case_marks_the_mission_finished():
+    state = canonicalize_story_state(
+        {
+            "current_location": "Old Library",
+            "current_npc": "Mara",
+            "quest_flags": {"met_eli": True, "found_ledger_clue": True, "truth_reported": True, "case_closed": False},
+            "active_quests": {"echo_shard": "completed"},
+            "inventory": [LEDGER_EVIDENCE],
+        }
+    )
+
+    result = apply_story_choice(
+        state,
+        {
+            "id": "close_case",
+            "text": "I have what I need. Let's close the case for now.",
+            "action_type": "exit",
+        },
+        current_npc="Mara",
+        current_location="Old Library",
+    )
+
+    assert result["quest_flags"]["case_closed"] is True
+    assert "close_case" in result["applied_rules"]

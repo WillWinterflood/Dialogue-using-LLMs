@@ -13,6 +13,7 @@ DEFAULT_QUEST_FLAGS = {
     "met_eli": False,
     "found_ledger_clue": False,
     "truth_reported": False,
+    "case_closed": False,
 }
 
 def _normalize_text(value):
@@ -75,6 +76,9 @@ def suggest_story_choices(world_state, current_npc, current_location):
     npc = str(current_npc or "").strip()
     location = str(current_location or "").strip()
 
+    if flags.get("case_closed"):
+        return []
+
     suggestions = []
     if location == "Market Gate" and npc == "Eli" and not flags.get("met_eli"):
         suggestions.append(
@@ -92,7 +96,7 @@ def suggest_story_choices(world_state, current_npc, current_location):
                 "action_type": "travel",
             }
         )
-    if location == "Old Library" and not flags.get("found_ledger_clue"):
+    if location == "Old Library" and npc == "Mara" and not flags.get("found_ledger_clue"):
         suggestions.append(
             {
                 "id": "inspect_ledger_7c",
@@ -125,6 +129,40 @@ def suggest_story_choices(world_state, current_npc, current_location):
             }
         )
     return suggestions
+
+def forced_story_choices(world_state, current_npc, current_location):
+    state = canonicalize_story_state(world_state)
+    flags = state.get("quest_flags", {})
+    npc = str(current_npc or "").strip()
+    location = str(current_location or "").strip()
+
+    if flags.get("case_closed"):
+        return []
+    if location == "Old Library" and npc == "Mara" and not flags.get("found_ledger_clue"):
+        return [
+            {
+                "id": "inspect_ledger_7c",
+                "text": "Mara, show me ledger 7C and the archive seals.",
+                "action_type": "investigate",
+            }
+        ]
+    if location == "Old Library" and npc == "Mara" and flags.get("found_ledger_clue") and not flags.get("truth_reported"):
+        return [
+            {
+                "id": "report_truth_to_mara",
+                "text": "Mara, the ledger was tampered with. Here is what I found.",
+                "action_type": "ask",
+            }
+        ]
+    if flags.get("truth_reported"):
+        return [
+            {
+                "id": "close_case",
+                "text": "I have what I need. Let's close the case for now.",
+                "action_type": "exit",
+            }
+        ]
+    return []
 
 def apply_story_choice(world_state, player_choice, current_npc, current_location):
     state = canonicalize_story_state(world_state)
@@ -192,7 +230,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         and not effective_flags.get("found_ledger_clue")
         and (
             choice_id == "inspect_ledger_7c"
-            or _has_any(choice_text, ("ledger 7c", "archive seal", "tampered ledger"))
+            or (action_type == "investigate" and _has_any(choice_text, ("ledger 7c", "archive seal", "tampered ledger")))
         )
     )
     if inspects_ledger:
@@ -234,5 +272,20 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
     else:
         effects["active_quests"][CORE_QUEST_ID] = "active"
 
-    return effects
+    closes_case = (
+        effective_flags.get("truth_reported")
+        and not effective_flags.get("case_closed")
+        and (
+            choice_id == "close_case"
+            or (action_type == "exit" and _has_any(choice_text, ("close the case", "case for now", "leave the archive")))
+        )
+    )
+    if closes_case:
+        effects["quest_flags"]["case_closed"] = True
+        effects["milestones"].append("case_closed")
+        effects["applied_rules"].append("close_case")
+        effects["narrator_lines"].append(
+            "Mara closes the ledger and lets the silence settle. For tonight, the Echo Shard case is over."
+        )
 
+    return effects
