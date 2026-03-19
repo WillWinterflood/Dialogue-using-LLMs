@@ -11,7 +11,7 @@ from pathlib import Path
 from src.story_rules import canonicalize_story_state
 
 DEFAULT_KNOWN_LOCATIONS = ["Old Library", "Market Gate"] 
-ARC_PLAN = [ #A simple plan for the story arc, helping streer the LLM towards a good storyline. 
+ARC_PLAN = [ #A simple plan for the story arc, helping streer the LLM towards a good storyline. This means that progression keeps moving forward.
     {
         "id": "secure_concrete_lead",
         "phase": "opening",
@@ -39,7 +39,7 @@ ARC_PLAN = [ #A simple plan for the story arc, helping streer the LLM towards a 
 ]
 
 
-def build_arc_state(beat_index=0, completed_beats=None):
+def build_arc_state(beat_index=0, completed_beats=None): 
     completed = list(completed_beats or [])
     if beat_index >= len(ARC_PLAN):
         return {
