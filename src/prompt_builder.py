@@ -1,3 +1,9 @@
+'''
+src/prompt_builder.py
+
+Builds the prompt that gets sent to the LLM
+'''
+
 import json
 from src.config import ALLOWED_STATE_UPDATE_KEYS, PROMPT_PATH, PROMPT_RECENT_MESSAGES, VALID_TIME_OF_DAY
 
@@ -22,25 +28,76 @@ def _build_prompt(
     required_choice_count=2,
     forced_choices=None,
 ):
-    recent = [message for message in recent_messages if message.get("role") == "user"]
+    current_npc = str(state.get("current_npc", "")).strip()
+    last_speaker = str(state.get("last_speaker", "")).strip()
+    spoken_npcs = state.get("spoken_npcs", [])
+    if not isinstance(spoken_npcs, list):
+        spoken_npcs = []
+    npc_has_history = current_npc.lower() in {str(name).strip().lower() for name in spoken_npcs if str(name).strip()}
+
+    current_npc_key = current_npc.lower()
+    recent = [
+        message
+        for message in recent_messages
+        if message.get("role") == "user"
+        and (
+            not str(message.get("npc", "")).strip()
+            or str(message.get("npc", "")).strip().lower() == current_npc_key
+        )
+    ]
     recent = recent[-PROMPT_RECENT_MESSAGES:]
-    if recent:
+    if recent and last_speaker.lower() == current_npc.lower():
         recent_text = "\n".join(f"{message['role']}: {message['content']}" for message in recent)
     else:
         recent_text = "none"
 
     memory_block = "\n".join(f"- {summary}" for summary in memory_summaries) if memory_summaries else "none"
 
+    if last_speaker.lower() == current_npc.lower():
+        last_memory_summary = state.get("last_memory_summary", "")
+        last_narrator = state.get("last_narrator", "")
+    else:
+        last_memory_summary = ""
+        last_narrator = ""
+
+    #Problem was that sometimes the NPCs prompts were becoming a bit hallucinated, so we need to make sure that if theter is a new NPC introduced then its the frst conversation with them
+    if current_npc and not npc_has_history: 
+        npc_knowledge_rule = (
+            f"- this is the first active conversation with {current_npc}; they only know what Alex just said, "
+            "what they personally observed, and facts surfaced in retrieved memories tied to them.\n"
+            f"- {current_npc} must not speak as if they heard the previous NPC's private conclusions.\n"
+        )
+    else:
+        #So this means that only the active NPC knows the prior conversation
+        npc_knowledge_rule = (
+            f"- {current_npc or 'The active NPC'} only knows their own prior conversations, the current scene, "
+            "and facts Alex has said aloud in this scene.\n"
+        )
+
+    if forced_choices and len(forced_choices) == 1:
+        choice_guardrail_block = (
+            f"- this is a locked story beat; the only valid next choice is: {forced_choices[0]['text']}\n"
+        )
+    else:
+        choice_guardrail_block = (
+            "- if choices are repeating from the previous turn, replace one with a concrete next-step question.\n"
+            "- include at least one concrete lead, travel, or evidence-focused next step when possible.\n"
+            "- at least one choice must move to a new location or introduce new information not mentioned this turn.\n"
+            "- never offer the same choice text that appeared in the previous turn.\n"
+            "- do not paraphrase the previous NPC reply back to the player.\n"
+            "- do not offer case closure unless the investigation has already been explicitly resolved."
+        )
+
     state_slice = {
         "current_location": state.get("current_location", ""),
-        "current_npc": state.get("current_npc", ""),
+        "current_npc": current_npc,
         "time_of_day": state.get("time_of_day", "night"),
         "day": state.get("day", 1),
         "active_quests": state.get("active_quests", {}),
         "quest_flags": state.get("quest_flags", {}),
         "inventory": state.get("inventory", []),
-        "last_memory_summary": state.get("last_memory_summary", ""),
-        "last_narrator": state.get("last_narrator", ""),
+        "last_memory_summary": last_memory_summary,
+        "last_narrator": last_narrator,
     }
 
     return (
@@ -73,17 +130,10 @@ def _build_prompt(
         "- use state_updates only for small ambient changes such as time passing.\n"
         "- do not change quest status, inventory, current_npc, or current_location in state_updates.\n"
         "- keep the reply in the current NPC's own voice; do not answer as another NPC.\n"
+        "- PROLOGUE and STATE are author context for consistency, not proof that the active NPC personally knows every fact in them.\n"
+        f"{npc_knowledge_rule}"
         f"- time_of_day must be one of: {', '.join(sorted(VALID_TIME_OF_DAY))}\n\n"
         "CHOICE QUALITY GUARDRAILS:\n"
         f"- choices must be exactly {required_choice_count} unique object{'s' if required_choice_count != 1 else ''} with id, text, action_type.\n"
-        + (
-            f"- this is a locked story beat; the only valid next choice is: {forced_choices[0]['text']}\n"
-            if forced_choices and len(forced_choices) == 1
-            else "- if choices are repeating from the previous turn, replace one with a concrete next-step question.\n"
-              "- include at least one concrete lead, travel, or evidence-focused next step when possible.\n"
-              "- at least one choice must move to a new location or introduce new information not mentioned this turn.\n"
-              "- never offer the same choice text that appeared in the previous turn.\n"
-              "- do not paraphrase the previous NPC reply back to the player.\n"
-              "- do not offer case closure unless the investigation has already been explicitly resolved."
-        )
+        f"{choice_guardrail_block}"
     )

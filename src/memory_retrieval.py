@@ -52,9 +52,11 @@ def _build_retrieval_query(player_choice, world_state, current_npc):
     recent_dialogue = []
     last_player_action = world_state.get("last_player_action")
     last_reply = world_state.get("last_reply")
-    if isinstance(last_player_action, str) and last_player_action.strip():
+    last_speaker = str(world_state.get("last_speaker", "")).strip().lower()
+    active_npc = str(current_npc or "").strip().lower()
+    if isinstance(last_player_action, str) and last_player_action.strip() and last_speaker == active_npc:
         recent_dialogue.append(last_player_action.strip())
-    if isinstance(last_reply, str) and last_reply.strip():
+    if isinstance(last_reply, str) and last_reply.strip() and last_speaker == active_npc:
         recent_dialogue.append(last_reply.strip())
 
     keywords = sorted(
@@ -145,11 +147,16 @@ def _retrieve_memories(
     query = _build_retrieval_query(player_choice, world_state, current_npc)
     npc_turns = memory_store.load_npc_turns(current_npc, MEMORY_NPC_TURNS)
     recent = memory_store.load_recent_turns(MEMORY_RECENT_TURNS)
+    active_npc = str(current_npc or "").strip().lower()
 
     seen_ids = set()
     combined = []
     for event in npc_turns + recent:
         if is_fallback_event(event):
+            continue
+        event_npc = str(event.get("current_npc", "")).strip().lower()
+        event_type = str(event.get("event_type", "")).strip().lower()
+        if event in recent and event_npc != active_npc and event_type not in {"travel", "handoff", "prologue"}:
             continue
         event_id = str(event.get("event_id", "")).strip() or f"legacy_{event.get('turn', 0)}_{len(combined)}"
         if event_id in seen_ids:
@@ -198,4 +205,3 @@ def _retrieve_memories(
         "prompt_tokens": 0,
     }
     return summaries, retrieval_meta
-

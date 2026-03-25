@@ -1,3 +1,11 @@
+'''
+src/state_manager.py 
+
+The game state controller 
+Essentially keeps track of NPC location and what NPC we are currently on. 
+Keeps track of current turn number etc...
+'''
+
 import time
 from uuid import uuid4 #To give every turn a different id
 from src.memory_retrieval import _build_auto_memory_summary
@@ -51,6 +59,7 @@ class StateManager:
                     known[text.lower()] = text
         return known
 
+    #Have added some planned progression - meaning what checkpoints I want the LLM to hit, this means that this is important to ensure that the LLM doesnt drift off course too much
     def _current_arc_state(self):
         arc_state = self.world_state.get("arc_state")
         if isinstance(arc_state, dict):
@@ -196,6 +205,13 @@ class StateManager:
         self.world_state["last_speaker"] = parsed_output["speaker"]
         self.world_state["last_reply"] = parsed_output["reply"]
         self.world_state["last_choices"] = list(parsed_output["choices"])
+        spoken_npcs = self.world_state.get("spoken_npcs", [])
+        if not isinstance(spoken_npcs, list):
+            spoken_npcs = []
+        speaker = str(parsed_output.get("speaker", "")).strip()
+        if speaker and speaker.lower() not in {str(name).strip().lower() for name in spoken_npcs}:
+            spoken_npcs.append(speaker)
+        self.world_state["spoken_npcs"] = spoken_npcs
         self.state_store.save(self.world_state)
 
         memory_summary = parsed_output.get("memory_summary", "")

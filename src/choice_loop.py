@@ -5,7 +5,7 @@ Thin conductor for the dynamic dialogue loop.
 It handles player-facing I/O and delegates prompt building, validation,
 retrieval, state mutation, and logging to focused modules.
 """
-
+#For the logging files
 import time
 
 from src.choice_formatter import _coerce_choice_list
@@ -68,8 +68,13 @@ class ChoiceLoop:
             handoff_turns = 0
         return handoff_turns + self.state.turn
 
-    def _show_turn_marker(self, turn_number=None):
-        visible_turn = self._visible_turn_number() if turn_number is None else int(turn_number)
+    def _show_turn_marker(self, turn_number=None): #Showing turn marker for human evaluation
+        visible_turn = self._visible_turn_number() 
+        if turn_number is None: 
+            visible_turn = self._visible_turn_number()
+        else:
+            visible_turn = int(turn_number)
+
         print(f"[Turn {visible_turn}]")
 
     def _safe_input(self, label):

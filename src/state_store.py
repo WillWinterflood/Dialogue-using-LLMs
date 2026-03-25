@@ -110,6 +110,7 @@ class WorldStateStore:
                 "Eli": 0,
             },
             "prologue_summary": prologue_summary,
+            "spoken_npcs": ["Mara"],
             "last_player_action": first_action_text,
             "last_choice_id": first_choice_id,
             "last_choice_text": first_action_text,
@@ -175,6 +176,7 @@ class WorldStateStore:
         )
         out.setdefault("npc_relationships", {"Mara": 1, "Eli": 0})
         out.setdefault("prologue_summary", "Prologue summary unavailable.")
+        out.setdefault("spoken_npcs", ["Mara"])
         out.setdefault("last_player_action", "I continue the investigation.")
         out.setdefault("last_choice_id", "continue_investigation")
         out.setdefault("last_choice_text", out["last_player_action"])
@@ -186,6 +188,17 @@ class WorldStateStore:
         out.setdefault("last_reply", "")
         out = canonicalize_story_state(out)
         out["last_choices"] = self._normalize_choice_list(out.get("last_choices", []))
+        raw_spoken_npcs = out.get("spoken_npcs", [])
+        if not isinstance(raw_spoken_npcs, list):
+            raw_spoken_npcs = []
+        seen_npcs = set()
+        spoken_npcs = []
+        for raw_name in raw_spoken_npcs:
+            name = str(raw_name).strip()
+            if name and name.lower() not in seen_npcs:
+                seen_npcs.add(name.lower())
+                spoken_npcs.append(name)
+        out["spoken_npcs"] = spoken_npcs
 
         known_locations = out.get("known_locations", [])
         if not isinstance(known_locations, list):
