@@ -64,12 +64,6 @@ def _select_scripted_choice(prompt_text, options, display_key="text"):
 def run_prologue():
     print("### PROLOGUE (HARDCODED) ###")
     type_line(
-        "Narrator: Rain needles through the crooked streets, turning dust to black sludge."
-    )
-    type_line(
-        "Narrator: In this town, shutters close before sunset and debts outlive the people who owe them."
-    )
-    type_line(
         "Narrator: You left for an apprenticeship and came back to find familiar faces harder, poorer, and scared."
     )
     type_line(

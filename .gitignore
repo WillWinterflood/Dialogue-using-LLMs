@@ -6,22 +6,20 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Virtual envs
+#VENV
 .venv/
 venv/
 
-# OS/Editor
+#OS
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 
-# Local env and outputs
+#Env
 .env
 exports/
 dialogue_log.jsonl
+failure_log.jsonl
 data/state/world_state.json
 data/memory/*.jsonl
-
-# Hugging Face cache (optional local path)
-.cache/

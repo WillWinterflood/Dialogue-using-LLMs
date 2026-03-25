@@ -146,22 +146,6 @@ def forced_story_choices(world_state, current_npc, current_location):
                 "action_type": "investigate",
             }
         ]
-    if location == "Old Library" and npc == "Mara" and flags.get("found_ledger_clue") and not flags.get("truth_reported"):
-        return [
-            {
-                "id": "report_truth_to_mara",
-                "text": "Mara, the ledger was tampered with. Here is what I found.",
-                "action_type": "ask",
-            }
-        ]
-    if flags.get("truth_reported"):
-        return [
-            {
-                "id": "close_case",
-                "text": "I have what I need. Let's close the case for now.",
-                "action_type": "exit",
-            }
-        ]
     return []
 
 def apply_story_choice(world_state, player_choice, current_npc, current_location):
@@ -270,7 +254,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
             "The library falls quiet as you lay the tampered ledger between you and Mara and force the truth into the open."
         )
     else:
-        effects["active_quests"][CORE_QUEST_ID] = "active"
+        effects["active_quests"].setdefault(CORE_QUEST_ID, "active")
 
     closes_case = (
         effective_flags.get("truth_reported")

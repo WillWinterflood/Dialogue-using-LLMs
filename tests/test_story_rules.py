@@ -55,6 +55,8 @@ def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence():
     )
 
     assert inspect["quest_flags"]["found_ledger_clue"] is True
+    assert inspect["quest_flags"]["truth_reported"] is True
+    assert inspect["active_quests"]["echo_shard"] == "completed"
     assert LEDGER_EVIDENCE in inspect["inventory_add"]
     assert inspect["narrator_lines"]
 
@@ -127,7 +129,7 @@ def test_suggest_story_choices_offers_a_directed_progress_option():
     assert "travel_old_library" in choice_ids
 
 
-def test_forced_story_choices_lock_library_progression_and_closure():
+def test_forced_story_choices_only_lock_ledger_inspection():
     inspect_choices = forced_story_choices(
         {
             "quest_flags": {"met_eli": True, "found_ledger_clue": False, "truth_reported": False, "case_closed": False},
@@ -146,7 +148,7 @@ def test_forced_story_choices_lock_library_progression_and_closure():
         current_npc="Mara",
         current_location="Old Library",
     )
-    assert [choice["id"] for choice in close_choices] == ["close_case"]
+    assert close_choices == []
 
 
 def test_close_case_marks_the_mission_finished():
