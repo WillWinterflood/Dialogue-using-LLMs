@@ -5,7 +5,7 @@ Hardcoded prologue scene and scripted choices, Removing the header saying prolog
 '''
 import time
 from src.text_fx import type_line
-PROLOGUE_THOUGHT_SECONDS = 3
+PROLOGUE_THOUGHT_SECONDS = 4
 
 INTRO_RESPONSE_CHOICES = [
     {
@@ -48,6 +48,10 @@ FIRST_MOVE_CHOICES = [
 ]
 
 
+def _show_turn_marker(turn_number):
+    print(f"[Turn {turn_number}]")
+
+
 def _select_scripted_choice(prompt_text, options, display_key="text"):
     type_line(prompt_text)
     for idx, option in enumerate(options, start=1):
@@ -62,9 +66,9 @@ def _select_scripted_choice(prompt_text, options, display_key="text"):
         print(f"Enter a number from 1 to {len(options)}.")
 
 def run_prologue():
-    print("### PROLOGUE (HARDCODED) ###")
+    # print("### PROLOGUE (HARDCODED) ###")
     type_line(
-        "Narrator: You left for an apprenticeship and came back to find familiar faces harder, poorer, and scared."
+        "Narrator: You came home from your apprenticeship to find the town meaner, poorer, and held together by fear and old debts."
     )
     type_line(
         "Narrator: Mara's message reached you at dawn: return to the Old Library now, no questions."
@@ -78,9 +82,10 @@ def run_prologue():
     type_line("Mara: Get me the truth.")
     print()
 
-    print("### SCRIPTED CHOICES ###")
+    # print("### SCRIPTED CHOICES ###")
     scripted_events = []
 
+    _show_turn_marker(1)
     first_choice = _select_scripted_choice("How do you answer Mara?", INTRO_RESPONSE_CHOICES)
     type_line(f"Alex: {first_choice['text']}")
     print("Mara is thinking.")
@@ -102,6 +107,7 @@ def run_prologue():
         }
     )
 
+    _show_turn_marker(2)
     second_choice = _select_scripted_choice("What is your first move?", FIRST_MOVE_CHOICES, display_key="menu_text")
     type_line(f"Alex: {second_choice['spoken_text']}")
     print("Mara is thinking.")
@@ -124,8 +130,7 @@ def run_prologue():
         }
     )
 
-    type_line("Narrator: The scripted prologue ends. From here, dynamic mode continues.")
-    print()
+    # type_line("Narrator: The scripted prologue ends. From here, dynamic mode continues.")
 
     prologue_summary = (
         "Prologue summary: Mara asked Alex to investigate the missing Echo Shard. "

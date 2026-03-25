@@ -61,6 +61,17 @@ class ChoiceLoop:
         }
         self.choice_timer_started_at = None
 
+    def _visible_turn_number(self):
+        try:
+            handoff_turns = int(self.state.world_state.get("handoff_turn_index", 0) or 0)
+        except Exception:
+            handoff_turns = 0
+        return handoff_turns + self.state.turn
+
+    def _show_turn_marker(self, turn_number=None):
+        visible_turn = self._visible_turn_number() if turn_number is None else int(turn_number)
+        print(f"[Turn {visible_turn}]")
+
     def _safe_input(self, label):
         try:
             return input(label).strip()
@@ -168,7 +179,7 @@ class ChoiceLoop:
                 type_line(f"  {i}. {choice['text']}")
 
     def run(self):
-        print("Dynamic mode enabled. LLM is active.")
+        # print("Dynamic mode enabled. LLM is active.")
         if self.resume_mode:
             self._show_resume_context()
             if self.last_choices:
@@ -300,13 +311,26 @@ class ChoiceLoop:
             elif closing_turn:
                 parsed_output["choices"] = []
 
-            self.messages.append({"role": "user", "content": f"{player_choice.get('id')}: {player_choice.get('text')}"})
-            self._show_response_ready(timing_meta)
+            self.messages.append(
+                {
+                    "role": "user",
+                    "content": f"{player_choice.get('id')}: {player_choice.get('text')}",
+                    "npc": self.state.current_npc,
+                }
+            )
+            # self._show_response_ready(timing_meta)
+            self._show_turn_marker()
             if parsed_output["narrator"]:
                 type_line(f"Narrator: {parsed_output['narrator']}")
             if parsed_output["speaker"] and parsed_output["reply"]:
                 type_line(f"{parsed_output['speaker']}: {parsed_output['reply']}")
-            self.messages.append({"role": "assistant", "content": f"{parsed_output['speaker']}: {parsed_output['reply']}"})
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"{parsed_output['speaker']}: {parsed_output['reply']}",
+                    "npc": parsed_output["speaker"],
+                }
+            )
             self.last_choices = parsed_output["choices"]
 
             for i, choice in enumerate(self.last_choices, start=1):
