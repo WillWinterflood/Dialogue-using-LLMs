@@ -88,11 +88,12 @@ class StateManager:
             return
 
         arc_state = self._current_arc_state()
-        for _ in milestones:
+        for milestone in milestones:
             next_beat = str(arc_state.get("next_required_beat", "")).strip()
             if not next_beat:
                 break
-            arc_state = advance_arc_state(arc_state)
+            if str(milestone).strip() == next_beat:
+                arc_state = advance_arc_state(arc_state)
         self.world_state["arc_state"] = arc_state
 
     def _apply_story_choice_rules(self, player_choice):
