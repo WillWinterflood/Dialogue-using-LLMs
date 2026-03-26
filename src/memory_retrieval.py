@@ -49,11 +49,17 @@ def _derive_tags(reply_text, memory_summary, current_npc, current_location, acti
 
 def _build_retrieval_query(player_choice, world_state, current_npc):
     active_quest_ids = sorted(world_state.get("active_quests", {}).keys())
+    arc_state = world_state.get("arc_state", {})
+    if not isinstance(arc_state, dict):
+        arc_state = {}
     recent_dialogue = []
     last_player_action = world_state.get("last_player_action")
     last_reply = world_state.get("last_reply")
     last_speaker = str(world_state.get("last_speaker", "")).strip().lower()
     active_npc = str(current_npc or "").strip().lower()
+    current_checkpoint_id = str(arc_state.get("next_required_beat", "")).strip()
+    current_checkpoint_goal = str(arc_state.get("next_required_goal", "")).strip()
+    next_checkpoint_id = str(arc_state.get("next_checkpoint_id", "")).strip()
     if isinstance(last_player_action, str) and last_player_action.strip() and last_speaker == active_npc:
         recent_dialogue.append(last_player_action.strip())
     if isinstance(last_reply, str) and last_reply.strip() and last_speaker == active_npc:
@@ -67,6 +73,9 @@ def _build_retrieval_query(player_choice, world_state, current_npc):
                     str(player_choice.get("text", "")),
                     str(current_npc or ""),
                     " ".join(active_quest_ids),
+                    current_checkpoint_id,
+                    current_checkpoint_goal,
+                    next_checkpoint_id,
                     " ".join(recent_dialogue),
                 ]
             )
@@ -78,6 +87,9 @@ def _build_retrieval_query(player_choice, world_state, current_npc):
         "action_type": player_choice.get("action_type"),
         "current_npc": current_npc,
         "active_quest_ids": active_quest_ids,
+        "current_checkpoint_id": current_checkpoint_id,
+        "current_checkpoint_goal": current_checkpoint_goal,
+        "next_checkpoint_id": next_checkpoint_id,
         "recent_dialogue": recent_dialogue[-4:],
         "keywords": keywords,
     }
@@ -105,6 +117,20 @@ def _score_memory_candidate(event, query, turn):
     quest_overlap = quest_ids & set(query.get("active_quest_ids", []))
     keyword_overlap = query_terms & (tag_terms | text_terms)
     same_npc = str(event.get("current_npc", "")).strip().lower() == str(query.get("current_npc", "")).strip().lower()
+    checkpoint_terms = _tokenize_for_match(
+        " ".join(
+            [
+                str(query.get("current_checkpoint_id", "")),
+                str(query.get("current_checkpoint_goal", "")),
+                str(query.get("next_checkpoint_id", "")),
+            ]
+        )
+    )
+    checkpoint_overlap = checkpoint_terms & (tag_terms | text_terms)
+    rule_effects = event.get("rule_effects", {})
+    if not isinstance(rule_effects, dict):
+        rule_effects = {}
+    milestone_terms = {str(item).strip() for item in rule_effects.get("milestones", []) if str(item).strip()}
     turns_ago = max(0, turn - int(event.get("turn", 0) or 0))
     recency_score = 1.0 / (1 + turns_ago)
 
@@ -122,6 +148,10 @@ def _score_memory_candidate(event, query, turn):
         constraint_bonus += 1.5
     if same_npc:
         constraint_bonus += 0.35
+    if checkpoint_overlap:
+        constraint_bonus += 1.0
+    if str(query.get("current_checkpoint_id", "")).strip() in milestone_terms:
+        constraint_bonus += 1.5
     if event_type in {"promise", "debt", "threat"} and same_npc:
         constraint_bonus += 0.75
 

@@ -1,6 +1,7 @@
 '''
 src/output_validator.py
-This file ensures that 
+This file ensures that the LLM outputs in the right form
+ensures that it outputs valid JSON
 '''
 
 import json
@@ -24,6 +25,17 @@ from src.config import (
     VALID_TIME_OF_DAY,
 )
 from src.memory_retrieval import _build_auto_memory_summary, _derive_tags
+
+UNSUPPORTED_SCENE_PATTERNS = (
+    r"\bmy room\b",
+    r"\bthe woods\b",
+    r"\binto the woods\b",
+    r"\bforest\b",
+    r"\bpurse\b",
+    r"\bclothes\b",
+    r"\bblacksmith\b",
+    r"\boutskirts\b",
+)
 
 class OutputValidationExhausted(RuntimeError):
     def __init__(self, message, *, last_raw="", errors=None, attempts=0):
@@ -144,6 +156,12 @@ def _is_too_similar_to_previous(current_text, previous_text):
     overlap_ratio = len(common) / max(1, min(len(current_tokens), len(previous_tokens)))
     return overlap_ratio >= 0.8 and len(common) >= 4
 
+def _has_unsupported_scene_drift(text):
+    low = _normalise_text_for_compare(text)
+    if not low:
+        return False
+    return any(re.search(pattern, low) for pattern in UNSUPPORTED_SCENE_PATTERNS)
+
 def _estimate_importance(event_type, state_updates, arc_update):
     score = 3
     if state_updates:
@@ -198,7 +216,11 @@ def _validate_output(
         and _is_too_similar_to_previous(reply_text, last_reply)
     ):
         errors.append("Dialogue mode: reply must add new information, not paraphrase the previous NPC line.")
+    if _has_unsupported_scene_drift(reply_text):
+        errors.append("Dialogue mode: reply introduced unsupported scene details.")
     if narrator_text and _is_too_similar_to_previous(narrator_text, last_narrator):
+        narrator_text = ""
+    if narrator_text and _has_unsupported_scene_drift(narrator_text):
         narrator_text = ""
     if not narrator_text:
         narrator_text = _build_auto_narrator(
@@ -218,6 +240,8 @@ def _validate_output(
     for idx, raw_choice in enumerate(raw_choices[:MAX_LLM_CHOICES], start=1):
         choice = _normalise_choice(raw_choice, fallback_index=idx)
         if not choice:
+            continue
+        if _has_unsupported_scene_drift(choice.get("text", "")):
             continue
         key = _choice_key(choice)
         if key in seen_choice_ids:

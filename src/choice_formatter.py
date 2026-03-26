@@ -82,6 +82,7 @@ def _is_generic_loop_choice(choice):
     low = _choice_text(choice).lower()
     return any(marker in low for marker in GENERIC_LOOP_MARKERS)
 
+#If there is a halt with the progress then insert one of these candidates, could work but also could be repetitive...
 def _build_progress_choice(blocked_keys, current_npc="", current_location=""):
     npc = str(current_npc or "").strip()
     location = str(current_location or "").strip()

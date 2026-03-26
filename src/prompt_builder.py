@@ -36,15 +36,7 @@ def _build_prompt(
     npc_has_history = current_npc.lower() in {str(name).strip().lower() for name in spoken_npcs if str(name).strip()}
 
     current_npc_key = current_npc.lower()
-    recent = [
-        message
-        for message in recent_messages
-        if message.get("role") == "user"
-        and (
-            not str(message.get("npc", "")).strip()
-            or str(message.get("npc", "")).strip().lower() == current_npc_key
-        )
-    ]
+    recent = [message for message in recent_messages]
     recent = recent[-PROMPT_RECENT_MESSAGES:]
     if recent and last_speaker.lower() == current_npc.lower():
         recent_text = "\n".join(f"{message['role']}: {message['content']}" for message in recent)
@@ -79,6 +71,7 @@ def _build_prompt(
             f"- this is a locked story beat; the only valid next choice is: {forced_choices[0]['text']}\n"
         )
     else:
+        #Forcing the LLM to move on and follow at least one concrete lead
         choice_guardrail_block = (
             "- if choices are repeating from the previous turn, replace one with a concrete next-step question.\n"
             "- include at least one concrete lead, travel, or evidence-focused next step when possible.\n"
@@ -104,7 +97,7 @@ def _build_prompt(
         f"{prompt_template}\n\n"
         "PROLOGUE:\n"
         f"{prologue_summary}\n\n"
-        "CURRENT STORY BEAT:\n"
+        "CURRENT STORY HANDOFF:\n"
         f"{story_transition or 'none'}\n\n"
         "STATE:\n"
         f"{json.dumps(state_slice, separators=(',', ':'))}\n\n"
@@ -112,10 +105,13 @@ def _build_prompt(
         f"- choice_id: {player_choice.get('id')}\n"
         f"- action_type: {player_choice.get('action_type')}\n"
         f"- spoken_text: {player_choice.get('text')}\n\n"
-        "ARC GOAL:\n"
+        "CHECKPOINT STATUS:\n"
         f"- phase: {arc_state.get('phase')}\n"
-        f"- next_required_beat: {arc_state.get('next_required_beat') or 'none'}\n"
-        f"- next_required_goal: {arc_state.get('next_required_goal')}\n"
+        f"- current_checkpoint_id: {arc_state.get('next_required_beat') or 'none'}\n"
+        f"- current_checkpoint_goal: {arc_state.get('next_required_goal')}\n"
+        f"- next_checkpoint_id: {arc_state.get('next_checkpoint_id') or 'none'}\n"
+        f"- next_checkpoint_goal: {arc_state.get('next_checkpoint_goal') or 'none'}\n"
+        f"- completed_checkpoints: {', '.join(arc_state.get('completed_beats', [])) or 'none'}\n"
         f"- beat_deadline_turn: {arc_state.get('beat_deadline_turn')}\n"
         f"- steering_strength: {arc_state.get('steering_strength', 'soft')}\n\n"
         "RELEVANT MEMORIES:\n"
@@ -131,6 +127,9 @@ def _build_prompt(
         "- do not change quest status, inventory, current_npc, or current_location in state_updates.\n"
         "- keep the reply in the current NPC's own voice; do not answer as another NPC.\n"
         "- PROLOGUE and STATE are author context for consistency, not proof that the active NPC personally knows every fact in them.\n"
+        "- continue directly from the current scene and the prologue handoff; do not restart the investigation.\n"
+        f"- move naturally toward the current checkpoint: {arc_state.get('next_required_beat') or 'none'}.\n"
+        "- do not skip ahead to a later checkpoint unless the current checkpoint has clearly been satisfied in-scene.\n"
         f"{npc_knowledge_rule}"
         f"- time_of_day must be one of: {', '.join(sorted(VALID_TIME_OF_DAY))}\n\n"
         "CHOICE QUALITY GUARDRAILS:\n"

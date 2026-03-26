@@ -21,8 +21,8 @@ MAX_LLM_CHOICES = 2
 MEMORY_RECENT_TURNS = 8
 MEMORY_NPC_TURNS = 20
 MEMORY_TOP_K = 2
-MEMORY_TOKEN_BUDGET = 120
-PROMPT_RECENT_MESSAGES = 2
+MEMORY_TOKEN_BUDGET = 200
+PROMPT_RECENT_MESSAGES = 6
 
 VALID_TIME_OF_DAY = {"dawn", "morning", "noon", "afternoon", "evening", "night"}
 ALLOWED_QUEST_STATUS = {"not_started", "active", "completed", "failed"}

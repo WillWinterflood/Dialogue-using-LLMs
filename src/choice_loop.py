@@ -309,8 +309,9 @@ class ChoiceLoop:
                 return
 
             timing_meta["generation_validation_seconds"] = round(time.perf_counter() - generation_started_at, 3)
-            timing_meta["response_ready_seconds"] = round(self._elapsed_since_choice(), 3)
             parsed_output = self.state._apply_pending_story_narration(parsed_output)
+
+            timing_meta["response_ready_seconds"] = round(self._elapsed_since_choice(), 3)
             if forced_choices:
                 parsed_output["choices"] = _coerce_choice_list(forced_choices)[:required_choice_count]
             elif closing_turn:
