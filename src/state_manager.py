@@ -8,15 +8,17 @@ Keeps track of current turn number etc...
 
 import time
 from uuid import uuid4 #To give every turn a different id
+from src.embedder import embed  # semantic embedding at write time (Problem 1)
 from src.memory_retrieval import _build_auto_memory_summary
 from src.state_store import advance_arc_state, build_arc_state
 from src.story_rules import apply_story_choice, canonicalize_story_state
 
 class StateManager:
-    def __init__(self, world_state, state_store, memory_store, current_npc="", current_location=""):
+    def __init__(self, world_state, state_store, memory_store, current_npc="", current_location="", llm=None):
         self.world_state = canonicalize_story_state(world_state or {})
         self.state_store = state_store
         self.memory_store = memory_store
+        self.llm = llm  # Used for LLM importance rating (Problem 3) and reflection
         self.current_npc = self.world_state.get("current_npc", current_npc)
         self.current_location = self.world_state.get("current_location", current_location)
         self.last_rule_effects = {"applied_rules": [], "milestones": []}
@@ -201,6 +203,88 @@ class StateManager:
         self.pending_story_narration = ""
         return parsed_output
 
+    def _rate_importance_with_llm(self, memory_summary):
+        """Ask the LLM to score this memory's importance from 1-10.
+
+        Generative Agents (Park et al. 2023) uses LLM-rated importance as one
+        of three retrieval signals alongside recency and relevance.  A direct
+        rating is richer than the heuristic in output_validator.py which only
+        checks event_type and whether state/arc updates are non-empty.
+        Returns None on any failure so the caller falls back to the validator estimate.
+        """
+        if not self.llm:
+            return None
+        try:
+            prompt = (
+                "Rate the importance of this investigation memory on a scale of 1 to 10. "
+                "1 = trivial small talk, 10 = critical evidence or plot turning point. "
+                "Reply with only a single integer.\n\n"
+                f"Memory: {memory_summary}"
+            )
+            raw = self.llm.generate([{"role": "user", "content": prompt}])
+            # Parse the first integer token in the valid range
+            for token in str(raw).split():
+                cleaned = token.strip(".,!?\"'")
+                try:
+                    val = int(cleaned)
+                    if 1 <= val <= 10:
+                        return val
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    def _maybe_reflect(self, current_npc, turn, every_n=5):
+        """Every every_n turns, compress recent NPC memories into a single reflection event.
+
+        Without compression the JSONL files grow unboundedly and the MEMORY_TOP_K cap
+        (currently 2) means most individual turns are never retrieved at all.  A single
+        reflection captures the gist of several turns in fewer tokens, giving the
+        retriever a denser, higher-importance candidate to surface.
+
+        This mirrors the 'reflection' step in Generative Agents (Park et al. 2023)
+        where the agent periodically synthesises lower-level observations into
+        higher-level insights that persist longer than any individual memory.
+        """
+        if not self.llm or turn % every_n != 0:
+            return
+        recent = self.memory_store.load_npc_turns(current_npc, n=every_n)
+        # Skip events that are themselves reflections to avoid compressing compressions
+        summaries = [
+            e.get("memory_summary", "").strip()
+            for e in recent
+            if e.get("memory_summary", "").strip() and e.get("event_type") != "reflection"
+        ]
+        if len(summaries) < 3:
+            return
+        try:
+            prompt = (
+                f"Summarise what Alex has learned about {current_npc} from these observations "
+                f"in 1-2 sentences. Be specific and factual. Reply with only the summary.\n\n"
+                + "\n".join(f"- {s}" for s in summaries)
+            )
+            reflection = self.llm.generate([{"role": "user", "content": prompt}]).strip()
+            if not reflection:
+                return
+            emb = embed(reflection)
+            self.memory_store.append_npc_memory(current_npc, {
+                "event_id": f"reflection_{current_npc}_{turn}_{uuid4().hex[:6]}",
+                "timestamp": time.time(),
+                "turn": turn,
+                "mode": "reflection",
+                "event_type": "reflection",
+                "memory_summary": reflection,
+                "importance": 7,  # High — reflections are durable synthesised facts
+                "embedding": emb.tolist() if emb is not None else None,
+                "current_npc": current_npc,
+                "current_location": self.current_location,
+                "tags": ["reflection", current_npc.lower()],
+                "quest_ids": sorted(self.world_state.get("active_quests", {}).keys()),
+            })
+        except Exception:
+            pass
+
     def _persist_turn_memory(self, player_choice, parsed_output, retrieval_meta):
         self.world_state["last_narrator"] = parsed_output["narrator"]
         self.world_state["last_speaker"] = parsed_output["speaker"]
@@ -224,6 +308,20 @@ class StateManager:
                 current_location=self.current_location,
             )
 
+        # Embed the memory summary for semantic retrieval (Problem 1).
+        # Stored as a plain Python list so it serialises cleanly to JSONL.
+        # Returns None if sentence-transformers is not installed — the scorer
+        # in memory_retrieval.py falls back to keyword overlap in that case.
+        summary_embedding = embed(memory_summary)
+        embedding_list = summary_embedding.tolist() if summary_embedding is not None else None
+
+        # LLM-rated importance (Problem 3 — Generative Agents style).
+        # Asking the model directly is richer than the heuristic estimate in
+        # output_validator.py which only checks event_type and state/arc updates.
+        # Falls back to the validator estimate on any failure.
+        llm_importance = self._rate_importance_with_llm(memory_summary)
+        importance = llm_importance if llm_importance is not None else parsed_output.get("importance", 3)
+
         event = {
             "event_id": f"turn_{self.turn}_{uuid4().hex[:8]}",
             "timestamp": time.time(),
@@ -243,7 +341,8 @@ class StateManager:
             "arc_update": parsed_output.get("arc_update", {}),
             "event_type": parsed_output.get("event_type", "dialogue"),
             "tags": parsed_output.get("tags", []),
-            "importance": parsed_output.get("importance", 3),
+            "importance": importance,
+            "embedding": embedding_list,
             "quest_ids": sorted(self.world_state.get("active_quests", {}).keys()),
             "retrieved_memory_ids": [item.get("event_id") for item in retrieval_meta.get("selected", [])],
             "retrieval_scores": [
@@ -257,3 +356,7 @@ class StateManager:
         }
         self.memory_store.append_turn(event)
         self.memory_store.append_npc_memory(parsed_output.get("speaker"), event)
+
+        # Every 5 turns, compress recent NPC memories into a single reflection.
+        # Prevents retrieval noise from accumulating as the session grows.
+        self._maybe_reflect(self.current_npc, self.turn)

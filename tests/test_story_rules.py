@@ -55,8 +55,7 @@ def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence():
     )
 
     assert inspect["quest_flags"]["found_ledger_clue"] is True
-    assert inspect["quest_flags"]["truth_reported"] is True
-    assert inspect["active_quests"]["echo_shard"] == "completed"
+    assert inspect["quest_flags"]["found_eli_clue"] is True
     assert LEDGER_EVIDENCE in inspect["inventory_add"]
     assert inspect["narrator_lines"]
 
@@ -75,16 +74,16 @@ def test_story_rules_complete_the_case_after_reporting_to_mara():
     result = apply_story_choice(
         state,
         {
-            "id": "report_truth_to_mara",
-            "text": "Mara, the ledger was tampered with. Here is what I found.",
-            "action_type": "ask",
+            "id": "report_eli_to_mara",
+            "text": "Mara, the boot print and ledger point to Eli. He is our best suspect.",
+            "action_type": "accuse",
         },
         current_npc="Mara",
         current_location="Old Library",
     )
 
+    assert result["quest_flags"]["reported_eli_to_mara"] is True
     assert result["quest_flags"]["truth_reported"] is True
-    assert result["active_quests"]["echo_shard"] == "completed"
     assert result["narrator_lines"]
 
 
@@ -129,7 +128,7 @@ def test_suggest_story_choices_offers_a_directed_progress_option():
     assert "travel_old_library" in choice_ids
 
 
-def test_forced_story_choices_only_lock_ledger_inspection():
+def test_forced_story_choices_always_returns_empty():
     inspect_choices = forced_story_choices(
         {
             "quest_flags": {"met_eli": True, "found_ledger_clue": False, "truth_reported": False, "case_closed": False},
@@ -138,7 +137,7 @@ def test_forced_story_choices_only_lock_ledger_inspection():
         current_npc="Mara",
         current_location="Old Library",
     )
-    assert [choice["id"] for choice in inspect_choices] == ["inspect_ledger_7c"]
+    assert inspect_choices == []
 
     close_choices = forced_story_choices(
         {
@@ -154,10 +153,17 @@ def test_forced_story_choices_only_lock_ledger_inspection():
 def test_close_case_marks_the_mission_finished():
     state = canonicalize_story_state(
         {
-            "current_location": "Old Library",
-            "current_npc": "Mara",
-            "quest_flags": {"met_eli": True, "found_ledger_clue": True, "truth_reported": True, "case_closed": False},
-            "active_quests": {"echo_shard": "completed"},
+            "current_location": "Market Gate",
+            "current_npc": "Eli",
+            "quest_flags": {
+                "met_eli": True,
+                "found_ledger_clue": True,
+                "found_eli_clue": True,
+                "reported_eli_to_mara": True,
+                "truth_reported": True,
+                "case_closed": False,
+            },
+            "active_quests": {"echo_shard": "active"},
             "inventory": [LEDGER_EVIDENCE],
         }
     )
@@ -165,13 +171,15 @@ def test_close_case_marks_the_mission_finished():
     result = apply_story_choice(
         state,
         {
-            "id": "close_case",
-            "text": "I have what I need. Let's close the case for now.",
-            "action_type": "exit",
+            "id": "accuse_eli_with_mara",
+            "text": "Eli, step away from the gate. Mara knows you tampered with the shipment.",
+            "action_type": "accuse",
         },
-        current_npc="Mara",
-        current_location="Old Library",
+        current_npc="Eli",
+        current_location="Market Gate",
     )
 
     assert result["quest_flags"]["case_closed"] is True
-    assert "close_case" in result["applied_rules"]
+    assert result["quest_flags"]["confronted_eli"] is True
+    assert result["active_quests"]["echo_shard"] == "completed"
+    assert "accuse_eli_with_mara" in result["applied_rules"]

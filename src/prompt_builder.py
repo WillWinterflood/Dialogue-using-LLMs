@@ -7,6 +7,23 @@ Builds the prompt that gets sent to the LLM
 import json
 from src.config import ALLOWED_STATE_UPDATE_KEYS, PROMPT_PATH, PROMPT_RECENT_MESSAGES, VALID_TIME_OF_DAY
 
+# Per-NPC character notes injected into every prompt.
+# Without these, a small model defaults to making every NPC helpful and open.
+# Eli must be evasive and defensive — not a cooperative witness — otherwise the
+# investigation has no tension and he volunteers information that should be extracted.
+NPC_NOTES = {
+    "eli": (
+        "Eli is evasive and defensive. He gives short deflecting answers and denies direct "
+        "involvement. He does not volunteer incriminating information freely. He never claims "
+        "Mara sent or tasked him with anything — that would be a confession. He keeps answers "
+        "vague, avoids specifics about the route entry, and deflects questions about the ledger."
+    ),
+    "mara": (
+        "Mara is measured and authoritative. She speaks in short factual statements, "
+        "waits for Alex to draw conclusions, and does not speculate beyond the evidence in front of her."
+    ),
+}
+
 def _load_prompt_template():
     if not PROMPT_PATH.exists():
         raise RuntimeError(f"Prompt file not found: {PROMPT_PATH}")
@@ -36,12 +53,19 @@ def _build_prompt(
     npc_has_history = current_npc.lower() in {str(name).strip().lower() for name in spoken_npcs if str(name).strip()}
 
     current_npc_key = current_npc.lower()
-    recent = [message for message in recent_messages]
-    recent = recent[-PROMPT_RECENT_MESSAGES:]
-    if recent and last_speaker.lower() == current_npc.lower():
-        recent_text = "\n".join(f"{message['role']}: {message['content']}" for message in recent)
-    else:
-        recent_text = "none"
+    # Filter to messages that involve the current NPC specifically.
+    # The old condition (last_speaker == current_npc) silently set recent_text
+    # to "none" whenever there was any speaker mismatch — e.g. after a prologue
+    # handoff — which stripped the model of all conversation history mid-session.
+    npc_recent = [
+        m for m in recent_messages
+        if str(m.get("npc", "")).strip().lower() == current_npc_key
+    ]
+    npc_recent = npc_recent[-PROMPT_RECENT_MESSAGES:]
+    recent_text = (
+        "\n".join(f"{m['role']}: {m['content']}" for m in npc_recent)
+        if npc_recent else "none"
+    )
 
     memory_block = "\n".join(f"- {summary}" for summary in memory_summaries) if memory_summaries else "none"
 
@@ -116,8 +140,6 @@ def _build_prompt(
         f"- steering_strength: {arc_state.get('steering_strength', 'soft')}\n\n"
         "RELEVANT MEMORIES:\n"
         f"{memory_block}\n\n"
-        "RECENT CONTEXT:\n"
-        f"{recent_text}\n\n"
         "WORLD RULES:\n"
         f"- turn: {turn}\n"
         f"- known locations are: {', '.join(known_locations) if known_locations else 'none'}\n"
@@ -132,6 +154,13 @@ def _build_prompt(
         "- do not skip ahead to a later checkpoint unless the current checkpoint has clearly been satisfied in-scene.\n"
         f"{npc_knowledge_rule}"
         f"- time_of_day must be one of: {', '.join(sorted(VALID_TIME_OF_DAY))}\n\n"
+        "NPC CHARACTER:\n"
+        f"{NPC_NOTES.get(current_npc_key, f'{current_npc} responds naturally to the scene.')}\n\n"
+        # RECENT CONTEXT is placed last so it sits closest to the generation point.
+        # A small model (1.5B) attends most strongly to recent tokens — burying this
+        # in the middle of the prompt caused the NPC to ignore prior conversation.
+        "RECENT CONTEXT:\n"
+        f"{recent_text}\n\n"
         "CHOICE QUALITY GUARDRAILS:\n"
         f"- choices must be exactly {required_choice_count} unique object{'s' if required_choice_count != 1 else ''} with id, text, action_type.\n"
         f"{choice_guardrail_block}"

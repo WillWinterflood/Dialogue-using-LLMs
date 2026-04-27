@@ -167,45 +167,14 @@ def suggest_story_choices(world_state, current_npc, current_location):
 
 
 def forced_story_choices(world_state, current_npc, current_location):
-    state = canonicalize_story_state(world_state)
-    flags = state.get("quest_flags", {})
-    npc = str(current_npc or "").strip()
-    location = str(current_location or "").strip()
-
-    if flags.get("case_closed"):
-        return []
-    if location == "Old Library" and npc == "Mara" and not flags.get("found_eli_clue"):
-        return [
-            {
-                "id": "inspect_ledger_7c",
-                "text": "Mara, show me ledger 7C and the archive floor around it.",
-                "action_type": "investigate",
-            }
-        ]
-    if location == "Old Library" and npc == "Mara" and flags.get("found_eli_clue") and not flags.get("reported_eli_to_mara"):
-        return [
-            {
-                "id": "report_eli_to_mara",
-                "text": "Mara, the boot print and ledger point to Eli. He is our best suspect.",
-                "action_type": "accuse",
-            }
-        ]
-    if location == "Old Library" and npc == "Mara" and flags.get("reported_eli_to_mara") and not flags.get("case_closed"):
-        return [
-            {
-                "id": "confront_eli_with_mara",
-                "text": "Mara, come with me. We confront Eli at the Market Gate now.",
-                "action_type": "travel",
-            }
-        ]
-    if location == "Market Gate" and npc == "Eli" and flags.get("reported_eli_to_mara") and not flags.get("case_closed"):
-        return [
-            {
-                "id": "accuse_eli_with_mara",
-                "text": "Eli, step away from the gate. Mara knows you tampered with the shipment.",
-                "action_type": "accuse",
-            }
-        ]
+    # Forced choices replaced single-option beats with hardcoded player text, which
+    # caused contradictions when the LLM had the NPC say the opposite (e.g. Mara
+    # saying "follow me" while the forced choice said "Mara, come with me").
+    # suggest_story_choices() already injects the beat-relevant option into the
+    # LLM's generated pair via _inject_story_choice(), so the player always sees
+    # the right choice without losing the second option and their sense of agency.
+    # The deterministic apply_story_choice() still fires the beat whenever the
+    # player picks the matching action — forced choices are not needed for that.
     return []
 
 

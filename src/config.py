@@ -20,8 +20,8 @@ MAX_LLM_CHOICES = 2
 
 MEMORY_RECENT_TURNS = 8
 MEMORY_NPC_TURNS = 20
-MEMORY_TOP_K = 2
-MEMORY_TOKEN_BUDGET = 200
+MEMORY_TOP_K = 3 # change this between runs: 0, 1, 2, 3, 4, 5
+MEMORY_TOKEN_BUDGET = 350  # was 200 — tighter budget was cutting off useful summaries
 PROMPT_RECENT_MESSAGES = 6
 
 VALID_TIME_OF_DAY = {"dawn", "morning", "noon", "afternoon", "evening", "night"}
@@ -37,7 +37,7 @@ GENERIC_LOOP_MARKERS = (
     "tell me more",
 )
 
-STOPWORDS = { #Low value words that gets ignored during text matching
+STOPWORDS = { #Low value words that gets ignored during text matching, if included, it would take up unnecessary amounts of space
     "the",
     "and",
     "that",

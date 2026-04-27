@@ -246,6 +246,13 @@ def _validate_output(
         key = _choice_key(choice)
         if key in seen_choice_ids:
             continue
+        # Also reject choices whose text is too similar to one already accepted
+        # this turn. The LLM often generates near-duplicate questions that differ
+        # only by adding the NPC name prefix (e.g. "Who changed the route entry?"
+        # and "Eli, who changed the route entry?") which look distinct by ID but
+        # are semantically identical to the player.
+        if any(_is_too_similar_to_previous(choice.get("text", ""), c.get("text", "")) for c in cleaned_choices):
+            continue
         seen_choice_ids.add(key)
         cleaned_choices.append(choice)
 

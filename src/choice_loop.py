@@ -42,6 +42,7 @@ class ChoiceLoop:
             memory_store,
             current_npc=current_npc,
             current_location=current_location,
+            llm=self.llm,  # Needed for LLM importance rating and reflection
         )
         self.prompt_template = _load_prompt_template()
         self.messages = [
@@ -137,9 +138,13 @@ class ChoiceLoop:
             return 0.0
         return max(0.0, time.perf_counter() - self.choice_timer_started_at)
 
-    def _show_response_ready(self, timing_meta):
+    def _show_response_ready(self, timing_meta, errors=None):
         elapsed = float(timing_meta.get("response_ready_seconds", 0.0))
-        print(f"[Response ready in {elapsed:.2f}s]")
+        attempts = 1
+        for e in (errors or []):
+            if str(e).startswith("json_retry_attempt_"):
+                attempts = int(str(e).split("_")[-1])
+        print(f"[Response ready in {elapsed:.2f}s | attempts: {attempts}]")
 
     def _is_fallback_event(self, event):
         if not isinstance(event, dict):
@@ -324,7 +329,7 @@ class ChoiceLoop:
                     "npc": self.state.current_npc,
                 }
             )
-            # self._show_response_ready(timing_meta)
+            self._show_response_ready(timing_meta, errors=errors)
             self._show_turn_marker()
             if parsed_output["narrator"]:
                 type_line(f"Narrator: {parsed_output['narrator']}")

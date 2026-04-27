@@ -8,6 +8,7 @@ import re
 
 from src.choice_formatter import _slugify
 from src.config import MEMORY_NPC_TURNS, MEMORY_RECENT_TURNS, MEMORY_TOKEN_BUDGET, MEMORY_TOP_K, STOPWORDS
+from src.embedder import cosine_similarity, embed  # semantic retrieval (Problem 1 & 2)
 
 def _tokenize_for_match(text):
     tokens = set()
@@ -94,7 +95,7 @@ def _build_retrieval_query(player_choice, world_state, current_npc):
         "keywords": keywords,
     }
 
-def _score_memory_candidate(event, query, turn):
+def _score_memory_candidate(event, query, turn, query_embedding=None):
     event_id = str(event.get("event_id", "")).strip() or f"legacy_{event.get('turn', 0)}"
     quest_ids = {str(item).strip() for item in event.get("quest_ids", []) if str(item).strip()}
 
@@ -155,12 +156,33 @@ def _score_memory_candidate(event, query, turn):
     if event_type in {"promise", "debt", "threat"} and same_npc:
         constraint_bonus += 0.75
 
-    score = len(keyword_overlap) * 1.25 + recency_score + importance_score + constraint_bonus
+    # --- Semantic relevance (Problem 1 & 2) ---
+    # Generative Agents (Park et al. 2023) scores memories as:
+    #   recency + importance + relevance
+    # where relevance = cosine similarity of sentence embeddings.
+    #
+    # Replacing raw keyword count with cosine similarity means the retriever
+    # can surface memories that are topically related even when the player
+    # uses different words — e.g. "who tampered with it?" matches a memory
+    # about Eli editing the route entry without sharing any keywords.
+    semantic_score = 0.0
+    event_embedding = event.get("embedding")
+    if query_embedding is not None and event_embedding is not None:
+        semantic_score = cosine_similarity(query_embedding, event_embedding)
+        relevance = semantic_score * 2.0
+    else:
+        # Fallback: original keyword overlap when embeddings are unavailable
+        # (e.g. sentence-transformers not installed, or event predates embedding)
+        relevance = len(keyword_overlap) * 1.25
+
+    score = relevance + recency_score + importance_score + constraint_bonus
     return {
         "event_id": event_id,
         "event": event,
         "score": score,
-        "passes_filter": bool(keyword_overlap or quest_overlap or same_npc),
+        # Widen the filter when we have a strong semantic hit — a high cosine
+        # score means the memory is topically relevant even without keyword overlap
+        "passes_filter": bool(keyword_overlap or quest_overlap or same_npc or semantic_score > 0.25),
     }
 
 def _retrieve_memories(
@@ -175,6 +197,13 @@ def _retrieve_memories(
     is_fallback_event,
 ):
     query = _build_retrieval_query(player_choice, world_state, current_npc)
+
+    # Embed the query text once here and reuse it for every candidate.
+    # Combining the player's spoken line with the keyword set gives the
+    # embedding model richer context than either alone.
+    query_text = f"{player_choice.get('text', '')} {' '.join(query.get('keywords', []))}"
+    query_embedding = embed(query_text)  # None if sentence-transformers unavailable
+
     npc_turns = memory_store.load_npc_turns(current_npc, MEMORY_NPC_TURNS)
     recent = memory_store.load_recent_turns(MEMORY_RECENT_TURNS)
     active_npc = str(current_npc or "").strip().lower()
@@ -196,12 +225,12 @@ def _retrieve_memories(
 
     scored = []
     for event in combined:
-        item = _score_memory_candidate(event, query, turn)
+        item = _score_memory_candidate(event, query, turn, query_embedding=query_embedding)
         if item["passes_filter"]:
             scored.append(item)
     if not scored:
         for event in combined[-MEMORY_RECENT_TURNS:]:
-            scored.append(_score_memory_candidate(event, query, turn))
+            scored.append(_score_memory_candidate(event, query, turn, query_embedding=query_embedding))
     scored.sort(key=lambda item: item["score"], reverse=True)
 
     selected = []
