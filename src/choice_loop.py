@@ -86,13 +86,13 @@ class ChoiceLoop:
             print("\nSession ended.")
             return None
 
-    def _safe_token_count(self, text): #W
+    def _safe_token_count(self, text): #Coutnign tokens and then fallback on word count if that doesnt work
         try:
             return self.llm.count_tokens_text(text)
         except Exception:
             return max(1, len(str(text or "").split()))
 
-    def _prompt_for_choice(self):
+    def _prompt_for_choice(self): 
         while True:
             raw = self._safe_input("Choice > ")
             if raw is None:
@@ -139,7 +139,7 @@ class ChoiceLoop:
             return 0.0
         return max(0.0, time.perf_counter() - self.choice_timer_started_at)
 
-    def _show_response_ready(self, timing_meta, errors=None):
+    def _show_response_ready(self, timing_meta, errors=None): #SHowing how long it takes for the resposne to be ready + how many Attempts -> IMPORTANT FOR EVAL
         elapsed = float(timing_meta.get("response_ready_seconds", 0.0))
         attempts = 1
         for e in (errors or []):
@@ -158,7 +158,7 @@ class ChoiceLoop:
         memory_summary = str(event.get("memory_summary", "")).strip().lower()
         return memory_summary.startswith("fallback response used while speaking with ")
 
-    def _show_resume_context(self):
+    def _show_resume_context(self): #Trying to make it more game like by adding a resume option 
         print(f"Resumed at {self.state.current_location} with {self.state.current_npc}.")
 
         last_action = self.state.world_state.get("last_player_action")
@@ -233,7 +233,7 @@ class ChoiceLoop:
             )
             required_choice_count = 1 if forced_choices else 2
             retrieval_started_at = time.perf_counter()
-            memory_summaries, self.last_retrieval = _retrieve_memories(
+            memory_summaries, self.last_retrieval = _retrieve_memories( #retrieval and prompt building
                 player_choice,
                 memory_store=self.memory_store,
                 current_npc=self.state.current_npc,
@@ -315,7 +315,7 @@ class ChoiceLoop:
                 print("Session ended: model could not produce a valid turn.")
                 return
 
-            timing_meta["generation_validation_seconds"] = round(time.perf_counter() - generation_started_at, 3)
+            timing_meta["generation_validation_seconds"] = round(time.perf_counter() - generation_started_at, 3) #How long the generation and validation takes +rounding to 3dp
             parsed_output = self.state._apply_pending_story_narration(parsed_output)
 
             timing_meta["response_ready_seconds"] = round(self._elapsed_since_choice(), 3)
@@ -367,7 +367,7 @@ class ChoiceLoop:
             self.state._persist_turn_memory(player_choice, parsed_output, self.last_retrieval)
 
             if closing_turn:
-                print("Mission complete.")
+                print("Mission complete.") 
                 self.choice_timer_started_at = None
                 return
 
