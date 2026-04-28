@@ -1,9 +1,7 @@
 """
 src/embedder.py
 
-Lazy-loaded sentence embedding model for semantic memory retrieval.
-
-Why a separate module?
+Why did i need a separate module?
   Both the write path (state_manager._persist_turn_memory) and the read path
   (memory_retrieval._retrieve_memories) need to embed text.  Putting the model
   in a singleton here means it is loaded once and reused, rather than
@@ -12,7 +10,7 @@ Why a separate module?
 Model choice — all-MiniLM-L6-v2:
   22 MB, runs comfortably on CPU alongside the main GPU model.
   Produces 384-dimensional embeddings with strong semantic coverage for
-  short dialogue and summary text.  See:
+  short dialogue and summary text. Got this idea from
     Reimers & Gurevych (2019) "Sentence-BERT: Sentence Embeddings using
     Siamese BERT-Networks", EMNLP 2019.
 """

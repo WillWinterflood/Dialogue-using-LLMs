@@ -26,6 +26,7 @@ from src.config import (
 )
 from src.memory_retrieval import _build_auto_memory_summary, _derive_tags
 
+#Scenes we dont support - if the LLM hallucinates these locations or props we strip them from the output
 UNSUPPORTED_SCENE_PATTERNS = (
     r"\bmy room\b",
     r"\bthe woods\b",
@@ -46,6 +47,7 @@ class OutputValidationExhausted(RuntimeError):
 
 
 def _extract_json_object(raw_text):
+    #The LLM sometimes wraps JSON in markdown fences or adds text around it, this tries to pull just the object out
     text = str(raw_text or "").strip()
     if not text:
         return None
@@ -106,6 +108,7 @@ def _sanitize_arc_update(raw_arc_update):
     return cleaned, []
 
 def _build_auto_narrator(current_location, current_npc, speaker_text, last_narrator=""):
+    #If the LLM leaves the narrator blank or it gets rejected as a repeat, fill in a stock line based on location and speaker
     location = str(current_location or "current location").strip()
     speaker = str(speaker_text or current_npc or "Someone").strip() or "Someone"
 
@@ -378,6 +381,7 @@ def _generate_valid_json(
     last_errors = []
 
     try:
+        #Each attempt adds increasingly explicit repair instructions - first a fix hint, then a skeleton, then a minimal final attempt
         for attempt in range(1, MAX_JSON_RETRY_ATTEMPTS + 1):
             attempt_messages = list(base_messages)
             if attempt == 2:

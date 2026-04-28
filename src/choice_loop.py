@@ -45,6 +45,7 @@ class ChoiceLoop:
             llm=self.llm,  # Needed for LLM importance rating and reflection
         )
         self.prompt_template = _load_prompt_template()
+        #Running conversation history passed to the LLM each turn so it remembers what was said this session
         self.messages = [
             {
                 "role": "system",
@@ -219,6 +220,7 @@ class ChoiceLoop:
                 "turn_started_elapsed_seconds": round(self._elapsed_since_choice(), 3),
             }
 
+            #Get the deterministic story suggestions before building the prompt so they can be injected into the choice list
             story_suggestions = suggest_story_choices(
                 self.state.world_state,
                 self.state.current_npc,
