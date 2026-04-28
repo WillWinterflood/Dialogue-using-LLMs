@@ -7,9 +7,11 @@ scene/quest progression so the game can keep moving even when generation
 is imperfect.
 """
 
+#The main quest id used throughout, keeping it as a constant so its never hardcoded in two different places
 CORE_QUEST_ID = "echo_shard"
 LEDGER_EVIDENCE = "Ledger 7C copy"
 BOOT_PRINT_EVIDENCE = "Boot print sketch"
+#All the flags that track story progress, all start as False and get set to True as the player progresses
 DEFAULT_QUEST_FLAGS = {
     "met_eli": False,
     "found_ledger_clue": False,
@@ -22,14 +24,17 @@ DEFAULT_QUEST_FLAGS = {
 
 
 def _normalize_text(value):
+    #Cleaning up text before doing any comparisons, so casing and spacing doesnt cause a mismatch
     return " ".join(str(value or "").strip().lower().split())
 
 
 def _has_any(text, needles):
+    #Checking if any of the trigger keywords appear in the player's choice text
     return any(needle in text for needle in needles)
 
 
 def _normalize_choice(choice):
+    #Pulling out the id, text and action_type from whatever format the choice comes in as
     if not isinstance(choice, dict):
         return {"id": "", "text": _normalize_text(choice), "action_type": ""}
     return {
@@ -40,6 +45,7 @@ def _normalize_choice(choice):
 
 
 def canonicalize_story_state(state):
+    #Enforcing that the quest flags are always in a consistent state - e.g. you cant have reported_eli without truth_reported also being true
     if not isinstance(state, dict):
         return {}
 
@@ -69,11 +75,13 @@ def canonicalize_story_state(state):
 
     out["quest_flags"] = flags
 
+    #Quest status follows directly from flags, so we dont have to trust whatever the LLM put in state_updates
     raw_quests = out.get("active_quests", {})
     active_quests = dict(raw_quests) if isinstance(raw_quests, dict) else {}
     active_quests[CORE_QUEST_ID] = "completed" if flags["case_closed"] else "active"
     out["active_quests"] = active_quests
 
+    #Deduplicating the inventory and making sure the evidence items are always present if the right flags are set
     inventory = out.get("inventory", [])
     if not isinstance(inventory, list):
         inventory = []
@@ -97,6 +105,7 @@ def canonicalize_story_state(state):
     return out
 
 def suggest_story_choices(world_state, current_npc, current_location):
+    #Suggests the next logical step to the player based on where they are and what flags have been set
     state = canonicalize_story_state(world_state)
     flags = state.get("quest_flags", {})
     npc = str(current_npc or "").strip()
@@ -179,6 +188,7 @@ def forced_story_choices(world_state, current_npc, current_location):
 
 
 def apply_story_choice(world_state, player_choice, current_npc, current_location):
+    #Main rule engine - checks what the player chose and applies the deterministic effects before the LLM ever sees the prompt
     state = canonicalize_story_state(world_state)
     flags = dict(state.get("quest_flags", {}))
     choice = _normalize_choice(player_choice)
@@ -200,6 +210,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         "narrator_lines": [],
     }
 
+    #Any real interaction with Eli counts as meeting him, not just asking - so resume and investigate count too
     interactive_actions = {"ask", "investigate", "accuse", "reassure", "threaten", "trade", "resume"}
     if effects["current_npc"] == "Eli" and action_type in interactive_actions and not flags.get("met_eli"):
         effects["quest_flags"]["met_eli"] = True
@@ -208,6 +219,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
             "Eli lingers beneath the Market Gate awning, speaking low while wagons grind past in the rain."
         )
 
+    #If the player chooses to travel to the library, move them there and swap the active NPC to Mara
     travel_to_library = (
         choice_id in {"travel_old_library", "report_to_mara"}
         or (
@@ -232,11 +244,13 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
             "You leave the Market Gate behind and cut back through the rain to the Old Library, where Mara waits beneath cracked glass."
         )
 
+    #Use the post-travel location and npc for the rest of the checks, not the one we started with
     effective_location = effects["current_location"] or str(current_location or "").strip()
     effective_npc = effects["current_npc"] or str(current_npc or "").strip()
     effective_flags = dict(flags)
     effective_flags.update(effects["quest_flags"])
 
+    #Key clue discovery - only fires at the library with Mara, and only if the clue hasnt been found yet
     inspects_ledger = (
         effective_location == "Old Library"
         and effective_npc == "Mara"
@@ -261,6 +275,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
             "Mara spreads ledger 7C across the archive desk. A muddy split-heel boot print cuts across the floor beside it, stamped in the same red gate-mud clinging to Eli's boots."
         )
 
+    #Player has the evidence and is formally accusing Eli to Mara - turning point of the investigation
     reports_eli = (
         effective_location == "Old Library"
         and effective_npc == "Mara"
@@ -290,6 +305,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
             "You lay the copied ledger beside the boot print sketch. Mara studies them in silence, then gives a single hard nod when Eli's name becomes unavoidable."
         )
 
+    #Final travel - player and Mara head back to confront Eli together at the gate
     travel_to_confront = (
         effective_location == "Old Library"
         and effective_npc == "Mara"
@@ -322,6 +338,7 @@ def apply_story_choice(world_state, player_choice, current_npc, current_location
         effective_location = "Market Gate"
         effective_npc = "Eli"
 
+    #Case closure - requires reported_eli_to_mara to be true, so you cant skip straight to the confrontation
     confronts_eli = (
         effective_location == "Market Gate"
         and effective_npc == "Eli"

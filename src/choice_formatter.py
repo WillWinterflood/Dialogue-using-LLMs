@@ -57,7 +57,8 @@ def _normalise_choice(raw_choice, fallback_index=0):
         action_type = "ask"
     return {"id": clean_id, "text": clean_text, "action_type": action_type}
 
-def _coerce_choice_list(raw_choices): 
+def _coerce_choice_list(raw_choices):
+    #Turning whatever list of choices comes in into a clean normalised list, capped at MAX_LLM_CHOICES
     cleaned = []
     for idx, raw_choice in enumerate(raw_choices or [], start=1):
         choice = _normalise_choice(raw_choice, fallback_index=idx)
@@ -79,6 +80,7 @@ def _choice_text(choice):
     return _normalise_choice_text(choice)
 
 def _is_generic_loop_choice(choice):
+    #Detecting vague filler choices like "anything else?" that dont actually move the story forward
     low = _choice_text(choice).lower()
     return any(marker in low for marker in GENERIC_LOOP_MARKERS)
 
@@ -116,6 +118,7 @@ def _build_progress_choice(blocked_keys, current_npc="", current_location=""):
     }
 
 def _enforce_progress_choice(cleaned_choices, last_choices, current_npc="", current_location=""):
+    #If the player keeps getting the same choices, swap one out for something that pushes the investigation forward
     if not cleaned_choices:
         return cleaned_choices
 
@@ -167,6 +170,7 @@ def _replace_repeated_choices(cleaned_choices, last_choices, current_npc="", cur
     return refreshed
 
 def _inject_story_choice(cleaned_choices, story_suggestions, last_choices):
+    #Injecting a story-suggested choice into the list, replacing a generic one if there is no room
     if not story_suggestions:
         return cleaned_choices
 

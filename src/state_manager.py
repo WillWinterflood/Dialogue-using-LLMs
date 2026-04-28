@@ -29,6 +29,7 @@ class StateManager:
             self.turn = 0
 
     def mission_finished(self):
+        #Checking whether the case has been closed so the loop knows to stop offering choices
         flags = self.world_state.get("quest_flags", {})
         if not isinstance(flags, dict):
             return False
@@ -69,6 +70,7 @@ class StateManager:
         return build_arc_state()
 
     def _apply_inventory_delta(self, add_items=None, remove_items=None):
+        #Adding or removing items from inventory, making sure we dont add duplicates
         inventory = self.world_state.get("inventory", [])
         if not isinstance(inventory, list):
             inventory = []
@@ -149,6 +151,7 @@ class StateManager:
                 self.pending_story_narration = text
 
     def _apply_arc_update(self, parsed_output):
+        #If we are approaching the deadline turn for the current beat, switch to hard steering so the LLM is more forcefully guided
         arc_state = self._current_arc_state()
         deadline_turn = arc_state.get("beat_deadline_turn")
         arc_state["steering_strength"] = "soft"
@@ -290,6 +293,7 @@ class StateManager:
         self.world_state["last_speaker"] = parsed_output["speaker"]
         self.world_state["last_reply"] = parsed_output["reply"]
         self.world_state["last_choices"] = list(parsed_output["choices"])
+        #Keeping track of which NPCs Alex has spoken to, used in the prompt to decide if this is a first conversation
         spoken_npcs = self.world_state.get("spoken_npcs", [])
         if not isinstance(spoken_npcs, list):
             spoken_npcs = []

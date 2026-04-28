@@ -157,6 +157,7 @@ class WorldStateStore:
         return normalized
 
     def _ensure_defaults(self, state):
+        #If we load a save from an older version of the code, this fills in any missing keys so we dont crash on a stale save file
         if not isinstance(state, dict):
             return None
 
