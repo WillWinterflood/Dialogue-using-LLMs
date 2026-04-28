@@ -76,6 +76,7 @@ def _extract_json_object(raw_text):
     return None
 
 def _sanitize_state_updates(updates):
+    #Only allow time_of_day and day through - the LLM isnt allowed to change location or quest status itself
     if not isinstance(updates, dict):
         return {}, []
 
@@ -95,6 +96,7 @@ def _sanitize_state_updates(updates):
     return cleaned, errors
 
 def _sanitize_arc_update(raw_arc_update):
+    #Cleaning the arc update the LLM returned, we only care about advance, beat_id, and reason
     cleaned = {"advance": False, "beat_id": "", "reason": ""}
     if raw_arc_update is None:
         raw_arc_update = {}
@@ -133,12 +135,15 @@ def _build_auto_narrator(current_location, current_npc, speaker_text, last_narra
     return candidate
 
 def _normalise_text_for_compare(value):
+    #Strips casing and extra whitespace before any comparison
     return " ".join(str(value or "").strip().lower().split())
 
 def _text_similarity_tokens(value):
+    #Pulls out meaningful tokens of 4+ characters for overlap comparison
     return {token for token in re.findall(r"[a-z0-9']+", _normalise_text_for_compare(value)) if len(token) >= 4}
 
 def _is_too_similar_to_previous(current_text, previous_text):
+    #Catches near-duplicate replies - the LLM would often repeat itself almost word for word between turns
     current = _normalise_text_for_compare(current_text)
     previous = _normalise_text_for_compare(previous_text)
     if not current or not previous:
@@ -166,6 +171,7 @@ def _has_unsupported_scene_drift(text):
     return any(re.search(pattern, low) for pattern in UNSUPPORTED_SCENE_PATTERNS)
 
 def _estimate_importance(event_type, state_updates, arc_update):
+    #Fallback importance score when the LLM doesnt give one - clue/threat/quest events score higher than plain dialogue
     score = 3
     if state_updates:
         score += 2
@@ -205,6 +211,7 @@ def _validate_output(
     last_reply = str(world_state.get("last_reply", "")).strip()
     last_speaker = str(world_state.get("last_speaker", "")).strip()
 
+    #Core dialogue checks - speaker must match the active NPC and the reply cant just echo the player back
     if not speaker_text or not reply_text:
         errors.append("Dialogue mode: speaker and reply must both be non-empty.")
     if active_npc and speaker_text.lower() != active_npc.lower():
@@ -302,6 +309,7 @@ def _validate_output(
     cleaned_updates, update_errors = _sanitize_state_updates(parsed.get("state_updates", {}))
     errors.extend(update_errors)
 
+    #If the LLM didnt write a memory summary, generate a basic one from the speaker and reply so nothing gets stored blank
     memory_summary = parsed.get("memory_summary", "")
     if not isinstance(memory_summary, str):
         memory_summary = ""
@@ -321,6 +329,7 @@ def _validate_output(
     if event_type not in ALLOWED_EVENT_TYPES:
         event_type = "dialogue"
 
+    #Tags are used later for memory retrieval scoring, so if the LLM skips them we derive them from the reply text
     raw_tags = parsed.get("tags", [])
     clean_tags = []
     if isinstance(raw_tags, list):
