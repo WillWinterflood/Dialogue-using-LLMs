@@ -22,9 +22,22 @@ The scenario is a short investigation: the player (Alex) questions NPCs across t
 ## Requirements
 
 - Python 3.10+
-- NVIDIA GPU with CUDA (default) — edit `src/llm_runtime.py` to change device
-  - I used this as this was my laptop GPU. 
+- NVIDIA GPU with CUDA (default) — I used this as it was my laptop GPU
 - ~2 GB disk space for model weights (downloaded automatically on first run)
+
+**No CUDA / no GPU?**
+
+Edit `src/llm_runtime.py` and replace:
+```python
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA is unavailable. This runtime requires a CUDA-capable GPU.")
+self.device = "cuda"
+```
+with:
+```python
+self.device = "cpu"
+```
+Generation will be much slower on CPU but the system will still run.
 
 ---
 
