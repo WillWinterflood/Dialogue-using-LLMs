@@ -1,3 +1,8 @@
+'''
+tests/test_story_rules.py
+Unit stests for story rules, testing the deterministic logic only 
+'''
+
 from src.story_rules import (
     LEDGER_EVIDENCE,
     apply_story_choice,
@@ -6,8 +11,7 @@ from src.story_rules import (
     suggest_story_choices,
 )
 
-
-def test_canonicalize_story_state_repairs_corrupted_quest_status():
+def test_canonicalize_story_state_repairs_corrupted_quest_status(): #If the quest is 'failed, then this should fix it back to being active
     state = canonicalize_story_state(
         {
             "active_quests": {"echo_shard": "failed"},
@@ -18,8 +22,7 @@ def test_canonicalize_story_state_repairs_corrupted_quest_status():
 
     assert state["active_quests"]["echo_shard"] == "active"
 
-
-def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence():
+def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence(): #Testing the two steps in this mission
     base_state = canonicalize_story_state(
         {
             "current_location": "Market Gate",
@@ -29,7 +32,7 @@ def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence():
             "inventory": [],
         }
     )
-
+    
     travel = apply_story_choice(
         base_state,
         {"id": "travel_old_library", "text": "I should inspect ledger 7C in the Old Library.", "action_type": "travel"},
@@ -59,8 +62,7 @@ def test_story_rules_move_the_player_to_mara_and_secure_ledger_evidence():
     assert LEDGER_EVIDENCE in inspect["inventory_add"]
     assert inspect["narrator_lines"]
 
-
-def test_story_rules_complete_the_case_after_reporting_to_mara():
+def test_story_rules_complete_the_case_after_reporting_to_mara(): # Once the player has a clue the flags, truth_reported and reported_eli_to_mara_
     state = canonicalize_story_state(
         {
             "current_location": "Old Library",
@@ -85,7 +87,6 @@ def test_story_rules_complete_the_case_after_reporting_to_mara():
     assert result["quest_flags"]["reported_eli_to_mara"] is True
     assert result["quest_flags"]["truth_reported"] is True
     assert result["narrator_lines"]
-
 
 def test_market_gate_ledger_question_does_not_force_scene_jump_to_mara():
     state = canonicalize_story_state(
@@ -113,7 +114,6 @@ def test_market_gate_ledger_question_does_not_force_scene_jump_to_mara():
     assert result["current_npc"] == "Eli"
     assert result["quest_flags"] == {}
 
-
 def test_suggest_story_choices_offers_a_directed_progress_option():
     choices = suggest_story_choices(
         {
@@ -127,8 +127,7 @@ def test_suggest_story_choices_offers_a_directed_progress_option():
     choice_ids = {choice["id"] for choice in choices}
     assert "travel_old_library" in choice_ids
 
-
-def test_forced_story_choices_always_returns_empty():
+def test_forced_story_choices_always_returns_empty(): #Checking that I remove forced choices to keep player agency
     inspect_choices = forced_story_choices(
         {
             "quest_flags": {"met_eli": True, "found_ledger_clue": False, "truth_reported": False, "case_closed": False},
@@ -149,8 +148,8 @@ def test_forced_story_choices_always_returns_empty():
     )
     assert close_choices == []
 
+def test_close_case_marks_the_mission_finished(): #Final part of mission, requires all past flags to be set before ending the entire thing
 
-def test_close_case_marks_the_mission_finished():
     state = canonicalize_story_state(
         {
             "current_location": "Market Gate",
