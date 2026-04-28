@@ -1,95 +1,110 @@
-# Dialogue-in-LLMs
+# Constrained Dialogue Generation for Video Games Using LLM (Qwen)
 
-## Overview
-This project explores how to keep LLM-driven game dialogue coherent and controllable.
-The dissertation focus is on conditioning + constrained generation, moving from a simple local loop to a structured dialogue pipeline with persistent state and memory retrieval.
+A dissertation research project exploring how constrained generation, retrieval-augmented memory, and deterministic story rules can be combined to produce coherent, controllable NPC dialogue using a locally-run large language model.
 
-## Current State
-The current runtime flow:
+The scenario is a short investigation: the player (Alex) questions NPCs across two locations to uncover who tampered with a shipment, building evidence before making an accusation.
 
-1. A hardcoded prologue introduces the scenario and characters.
-2. The player selects scripted prologue choices.
-3. Dynamic mode starts with a local LLM.
-4. The loop retrieves recent global turns + NPC turns, then injects top summaries into the prompt.
-5. The LLM must return strict JSON.
-6. Deterministic story rules handle canonical quest/scene progression before the prompt is built.
-7. JSON is parsed/validated with retry-on-invalid.
-8. Dialogue and 2 numbered choices are shown, with at least one directed progress option when needed.
-9. The player selects a choice number.
-10. Canonical world state + memory logs are persisted each turn.
+---
 
-Current files:
-- `game.py`: thin entrypoint
-- `src/prologue.py`: hardcoded prologue scene + scripted choices
-- `src/llm_runtime.py`: local Hugging Face model load/generate wrapper
-- `src/choice_loop.py`: prompt build, JSON extraction/validation, logging, choice loop
-- `src/state_store.py`: saves/loads world state
-- `src/memory_store.py`: appends global + per-NPC memory journals
-- `prompts/prompt_v1.txt`: base prompt contract
+## How It Works
 
-## JSON Contract (Current)
-The dynamic loop currently expects:
-- `narrator` (string)
-- `speaker` (string)
-- `reply` (string)
-- `choices` (list, 2 items)
-- `state_updates` (object)
-- `memory_summary` (string)
+1. A scripted prologue introduces the scenario and seeds the memory store.
+2. The player selects from numbered choices each turn.
+3. Deterministic story rules enforce quest flag invariants and canonical scene transitions before any prompt is built.
+4. Relevant memories are scored and retrieved using recency, NPC match, quest overlap, and cosine semantic similarity.
+5. A structured prompt is built and sent to the local LLM.
+6. The LLM must return strict JSON (narrator, speaker, reply, choices, state_updates, memory_summary).
+7. Output is validated and repaired through a 4-stage retry pipeline.
+8. World state and memory logs are persisted each turn.
 
-Validation now enforces:
-- required keys are present
-- key types are correct
-- `speaker` matches current NPC
-- `reply` is non-empty and not a verbatim copy of player input
-- `choices` contain 2 non-empty items after cleaning
-- `state_updates` are treated as low-authority ambient hints only
-
-If output is invalid:
-- the loop retries with a repair instruction
-- if still invalid after max retries, a safe fallback turn is used
+---
 
 ## Requirements
+
 - Python 3.10+
-- NVIDIA GPU with CUDA available (runtime is CUDA-only) -> can be changed for other GPUs
+- NVIDIA GPU with CUDA (default) — edit `src/llm_runtime.py` to change device
+  - I used this as this was my laptop GPU. 
+- ~2 GB disk space for model weights (downloaded automatically on first run)
+
+---
 
 ## Setup (PowerShell)
-```bash
+
+Can set up a virtual environment if you want, it will not make much difference if you dont though
+
+```powershell
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
+---
 
 ## Run
-```bash
+
+```powershell
 py -3 game.py
 ```
 
-Optional environment variables:
-- `LOCAL_MODEL_ID` (default: `Qwen/Qwen2.5-1.5B-Instruct`)
-- `LOCAL_MAX_NEW_TOKENS` (default: `96`)
+On first run the Hugging Face model weights will be downloaded automatically.  
+On subsequent runs you will be asked whether to continue the previous session or restart.
 
-## Retrieval Knobs
-Current retrieval parameters in `src/choice_loop.py`:
-- `MEMORY_RECENT_TURNS = 8`
-- `MEMORY_NPC_TURNS = 20`
-- `MEMORY_TOP_K = 4`
+---
 
-## Logging
-Each turn is appended to:
-- `dialogue_log.jsonl`
-- `data/memory/turns.jsonl`
-- `data/memory/<npc_name>.jsonl`
+## Environment Variables (Optional)
 
-State snapshot is saved to:
-- `data/state/world_state.json`
+| Variable | Default | Description |
+|---|---|---|
+| `LOCAL_MODEL_ID` | `Qwen/Qwen2.5-1.5B-Instruct` | Hugging Face model ID to load |
+| `LOCAL_MAX_NEW_TOKENS` | `96` | Max tokens generated per turn |
 
-Logged fields include:
-- timestamp
-- model
-- turn
-- user input
-- prompt
-- raw model output
-- parsed output
-- valid flag
-- validation errors
+---
+
+## Project Structure
+
+```
+game.py                   Entry point
+src/
+  choice_loop.py          Main dialogue loop conductor
+  prompt_builder.py       Structured prompt assembly
+  output_validator.py     JSON validation and retry repair pipeline
+  story_rules.py          Deterministic FSM for quest/scene progression
+  memory_retrieval.py     Memory scoring and retrieval
+  state_manager.py        World state, LLM importance rating, reflection
+  memory_store.py         Append-only JSONL memory journals
+  state_store.py          World state persistence and arc checkpoint plan
+  embedder.py             Lazy sentence-embedding singleton (all-MiniLM-L6-v2)
+  choice_formatter.py     Choice normalisation, deduplication, loop detection
+  llm_runtime.py          Hugging Face model load/generate wrapper
+  prologue.py             Scripted prologue scene and scripted choices
+  config.py               All tunable constants
+prompts/
+  prompt_v1.txt           Base prompt contract sent to the LLM
+tests/
+  test_story_rules.py     Unit tests for deterministic story rule logic
+data/
+  memory/                 Per-turn and per-NPC memory journals (JSONL)
+  state/                  Persisted world state (JSON)
+dialogue_log.jsonl        Full turn log (raw output, parsed output, timing)
+failure_log.jsonl         Log of turns where validation was exhausted
+```
+
+---
+
+## Retrieval Tuning
+
+Key constants in `src/config.py`:
+
+| Constant | Default | Effect |
+|---|---|---|
+| `MEMORY_TOP_K` | `3` | Number of memories injected per turn |
+| `MEMORY_TOKEN_BUDGET` | `350` | Max tokens allocated to memory block |
+| `MEMORY_RECENT_TURNS` | `8` | Turns considered for recency scoring |
+| `PROMPT_RECENT_MESSAGES` | `6` | Recent messages included in prompt context |
+
+---
+
+## Tests
+
+```powershell
+pytest tests/
+```
