@@ -106,5 +106,5 @@ Key constants in `src/config.py`:
 ## Tests
 
 ```powershell
-pytest tests/
+py -3 -m pytest tests
 ```
