@@ -13,28 +13,22 @@ from src.story_rules import canonicalize_story_state
 DEFAULT_KNOWN_LOCATIONS = ["Old Library", "Market Gate"] 
 ARC_PLAN = [ #A simple plan for the story arc, helping streer the LLM towards a good storyline. This means that progression keeps moving forward.
     {
-        "id": "secure_concrete_lead",
+        "id": "find_clue_pointing_to_eli",
         "phase": "opening",
-        "deadline_turn": 3,
-        "goal": "Reveal a concrete lead the player can verify immediately.",
+        "deadline_turn": 4,
+        "goal": "Alex must uncover a concrete clue that points suspicion toward Eli.",
     },
     {
-        "id": "verify_evidence",
+        "id": "report_eli_to_mara",
         "phase": "middle",
-        "deadline_turn": 6,
-        "goal": "Point the player toward evidence, a witness, or a location to inspect.",
+        "deadline_turn": 8,
+        "goal": "Alex must take the clue back to Mara and clearly explain why Eli is the suspect.",
     },
     {
-        "id": "identify_pressure_point",
-        "phase": "middle",
-        "deadline_turn": 9,
-        "goal": "Surface a suspect, leverage point, threat, debt, or contradiction.",
-    },
-    {
-        "id": "push_resolution",
+        "id": "confront_eli_with_mara",
         "phase": "ending",
         "deadline_turn": 12,
-        "goal": "Drive the scene toward confrontation, confession, or reporting the truth.",
+        "goal": "Alex and Mara must confront Eli together and close the Echo Shard case.",
     },
 ]
 
@@ -48,17 +42,22 @@ def build_arc_state(beat_index=0, completed_beats=None):
             "next_required_beat": "",
             "next_required_goal": "Resolve the investigation cleanly.",
             "beat_deadline_turn": None,
+            "next_checkpoint_id": "",
+            "next_checkpoint_goal": "",
             "completed_beats": completed,
             "steering_strength": "soft",
         }
 
     beat = ARC_PLAN[beat_index]
+    following = ARC_PLAN[beat_index + 1] if beat_index + 1 < len(ARC_PLAN) else None
     return {
         "phase": beat["phase"],
         "beat_index": beat_index,
         "next_required_beat": beat["id"],
         "next_required_goal": beat["goal"],
         "beat_deadline_turn": beat["deadline_turn"],
+        "next_checkpoint_id": following["id"] if following else "",
+        "next_checkpoint_goal": following["goal"] if following else "",
         "completed_beats": completed,
         "steering_strength": "soft",
     }
@@ -103,13 +102,18 @@ class WorldStateStore:
             "quest_flags": {
                 "met_eli": False,
                 "found_ledger_clue": False,
+                "found_eli_clue": False,
+                "reported_eli_to_mara": False,
                 "truth_reported": False,
+                "confronted_eli": False,
+                "case_closed": False,
             },
             "npc_relationships": {
                 "Mara": 1,
                 "Eli": 0,
             },
             "prologue_summary": prologue_summary,
+            "spoken_npcs": ["Mara"],
             "last_player_action": first_action_text,
             "last_choice_id": first_choice_id,
             "last_choice_text": first_action_text,
@@ -170,11 +174,16 @@ class WorldStateStore:
             {
                 "met_eli": False,
                 "found_ledger_clue": False,
+                "found_eli_clue": False,
+                "reported_eli_to_mara": False,
                 "truth_reported": False,
+                "confronted_eli": False,
+                "case_closed": False,
             },
         )
         out.setdefault("npc_relationships", {"Mara": 1, "Eli": 0})
         out.setdefault("prologue_summary", "Prologue summary unavailable.")
+        out.setdefault("spoken_npcs", ["Mara"])
         out.setdefault("last_player_action", "I continue the investigation.")
         out.setdefault("last_choice_id", "continue_investigation")
         out.setdefault("last_choice_text", out["last_player_action"])
@@ -186,6 +195,17 @@ class WorldStateStore:
         out.setdefault("last_reply", "")
         out = canonicalize_story_state(out)
         out["last_choices"] = self._normalize_choice_list(out.get("last_choices", []))
+        raw_spoken_npcs = out.get("spoken_npcs", [])
+        if not isinstance(raw_spoken_npcs, list):
+            raw_spoken_npcs = []
+        seen_npcs = set()
+        spoken_npcs = []
+        for raw_name in raw_spoken_npcs:
+            name = str(raw_name).strip()
+            if name and name.lower() not in seen_npcs:
+                seen_npcs.add(name.lower())
+                spoken_npcs.append(name)
+        out["spoken_npcs"] = spoken_npcs
 
         known_locations = out.get("known_locations", [])
         if not isinstance(known_locations, list):

@@ -1,9 +1,11 @@
 '''
 src/output_validator.py
-This file ensures that 
+This file ensures that the LLM outputs in the right form
+ensures that it outputs valid JSON
 '''
 
 import json
+import re
 
 from src.choice_formatter import (
     _build_progress_choice,
@@ -12,6 +14,7 @@ from src.choice_formatter import (
     _enforce_progress_choice,
     _inject_story_choice,
     _normalise_choice,
+    _replace_repeated_choices,
     _slugify,
 )
 from src.config import (
@@ -22,6 +25,17 @@ from src.config import (
     VALID_TIME_OF_DAY,
 )
 from src.memory_retrieval import _build_auto_memory_summary, _derive_tags
+
+UNSUPPORTED_SCENE_PATTERNS = (
+    r"\bmy room\b",
+    r"\bthe woods\b",
+    r"\binto the woods\b",
+    r"\bforest\b",
+    r"\bpurse\b",
+    r"\bclothes\b",
+    r"\bblacksmith\b",
+    r"\boutskirts\b",
+)
 
 class OutputValidationExhausted(RuntimeError):
     def __init__(self, message, *, last_raw="", errors=None, attempts=0):
@@ -91,7 +105,7 @@ def _sanitize_arc_update(raw_arc_update):
     cleaned["reason"] = " ".join(str(raw_arc_update.get("reason", "")).strip().split())[:160]
     return cleaned, []
 
-def _build_auto_narrator(current_location, current_npc, speaker_text):
+def _build_auto_narrator(current_location, current_npc, speaker_text, last_narrator=""):
     location = str(current_location or "current location").strip()
     speaker = str(speaker_text or current_npc or "Someone").strip() or "Someone"
 
@@ -105,7 +119,48 @@ def _build_auto_narrator(current_location, current_npc, speaker_text):
         "Mara": "Mara waits by the archive desk with the stillness of someone already weighing the truth.",
     }.get(speaker, f"{speaker} watches you closely before answering.")
 
-    return f"{location_line} {speaker_line}"
+    candidate = f"{location_line} {speaker_line}".strip()
+    previous = " ".join(str(last_narrator or "").strip().split())
+    if not candidate:
+        return ""
+    # Reject the fallback if it would repeat exactly or if the previous
+    # narrator already contains this stock line alongside story bridge text.
+    if candidate == previous or candidate in previous:
+        return ""
+    return candidate
+
+def _normalise_text_for_compare(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+def _text_similarity_tokens(value):
+    return {token for token in re.findall(r"[a-z0-9']+", _normalise_text_for_compare(value)) if len(token) >= 4}
+
+def _is_too_similar_to_previous(current_text, previous_text):
+    current = _normalise_text_for_compare(current_text)
+    previous = _normalise_text_for_compare(previous_text)
+    if not current or not previous:
+        return False
+    if current == previous:
+        return True
+
+    shorter = min(len(current), len(previous))
+    if shorter >= 40 and (current in previous or previous in current):
+        return True
+
+    current_tokens = _text_similarity_tokens(current)
+    previous_tokens = _text_similarity_tokens(previous)
+    if not current_tokens or not previous_tokens:
+        return False
+
+    common = current_tokens & previous_tokens
+    overlap_ratio = len(common) / max(1, min(len(current_tokens), len(previous_tokens)))
+    return overlap_ratio >= 0.8 and len(common) >= 4
+
+def _has_unsupported_scene_drift(text):
+    low = _normalise_text_for_compare(text)
+    if not low:
+        return False
+    return any(re.search(pattern, low) for pattern in UNSUPPORTED_SCENE_PATTERNS)
 
 def _estimate_importance(event_type, state_updates, arc_update):
     score = 3
@@ -143,6 +198,9 @@ def _validate_output(
     reply_text = str(parsed.get("reply", "")).strip()
     active_npc = str(current_npc or "").strip()
     current_choice_text = str(current_player_choice.get("text", "")).strip().lower()
+    last_narrator = str(world_state.get("last_narrator", "")).strip()
+    last_reply = str(world_state.get("last_reply", "")).strip()
+    last_speaker = str(world_state.get("last_speaker", "")).strip()
 
     if not speaker_text or not reply_text:
         errors.append("Dialogue mode: speaker and reply must both be non-empty.")
@@ -150,8 +208,27 @@ def _validate_output(
         errors.append(f"Dialogue mode: speaker must be current_npc '{active_npc}'.")
     if current_choice_text and reply_text.lower() == current_choice_text:
         errors.append("Dialogue mode: reply must not repeat the player's selected line verbatim.")
+    if (
+        last_reply
+        and last_speaker
+        and active_npc
+        and last_speaker.lower() == active_npc.lower()
+        and _is_too_similar_to_previous(reply_text, last_reply)
+    ):
+        errors.append("Dialogue mode: reply must add new information, not paraphrase the previous NPC line.")
+    if _has_unsupported_scene_drift(reply_text):
+        errors.append("Dialogue mode: reply introduced unsupported scene details.")
+    if narrator_text and _is_too_similar_to_previous(narrator_text, last_narrator):
+        narrator_text = ""
+    if narrator_text and _has_unsupported_scene_drift(narrator_text):
+        narrator_text = ""
     if not narrator_text:
-        narrator_text = _build_auto_narrator(current_location, current_npc, speaker_text or active_npc)
+        narrator_text = _build_auto_narrator(
+            current_location,
+            current_npc,
+            speaker_text or active_npc,
+            last_narrator=last_narrator,
+        )
 
     raw_choices = parsed.get("choices")
     if not isinstance(raw_choices, list):
@@ -164,8 +241,17 @@ def _validate_output(
         choice = _normalise_choice(raw_choice, fallback_index=idx)
         if not choice:
             continue
+        if _has_unsupported_scene_drift(choice.get("text", "")):
+            continue
         key = _choice_key(choice)
         if key in seen_choice_ids:
+            continue
+        # Also reject choices whose text is too similar to one already accepted
+        # this turn. The LLM often generates near-duplicate questions that differ
+        # only by adding the NPC name prefix (e.g. "Who changed the route entry?"
+        # and "Eli, who changed the route entry?") which look distinct by ID but
+        # are semantically identical to the player.
+        if any(_is_too_similar_to_previous(choice.get("text", ""), c.get("text", "")) for c in cleaned_choices):
             continue
         seen_choice_ids.add(key)
         cleaned_choices.append(choice)
@@ -190,6 +276,21 @@ def _validate_output(
             current_location=current_location,
         )
         cleaned_choices = _inject_story_choice(cleaned_choices, story_suggestions, last_choices)
+        cleaned_choices = _replace_repeated_choices(
+            cleaned_choices,
+            last_choices,
+            current_npc=current_npc,
+            current_location=current_location,
+        )
+        while len(cleaned_choices) < required_choice_count:
+            progress = _build_progress_choice(
+                {_choice_key(choice) for choice in cleaned_choices},
+                current_npc=current_npc,
+                current_location=current_location,
+            )
+            if _choice_key(progress) in {_choice_key(choice) for choice in cleaned_choices}:
+                break
+            cleaned_choices.append(progress)
 
     cleaned_choices = cleaned_choices[:required_choice_count]
     if len(cleaned_choices) != required_choice_count:
@@ -290,6 +391,7 @@ def _generate_valid_json(
                     + f"Fix these errors exactly: {json.dumps(last_errors)}\n"
                     + f"Use this exact speaker value: {current_npc}\n"
                     + "Never set speaker to Alex.\n"
+                    + f"Keep the reply in {current_npc}'s own voice and do not speak as another NPC.\n"
                     + f"Choices must be exactly {required_choice_count} object{'s' if required_choice_count != 1 else ''} with keys id, text, action_type.\n"
                     + forced_choice_hint
                     + "Do not change quest status, inventory, current_npc, or current_location in state_updates.\n"
@@ -340,6 +442,7 @@ def _generate_valid_json(
                 final_repair_content = (
                     "Final repair attempt. Keep everything extremely short.\n"
                     + f"Speaker must be exactly {current_npc}.\n"
+                    + f"Reply must stay in {current_npc}'s voice.\n"
                     + f"Current beat: {arc_state.get('next_required_beat') or 'none'}.\n"
                     + "Use one short sentence for reply.\n"
                     + "Use at most one short sentence for narrator, or an empty string.\n"

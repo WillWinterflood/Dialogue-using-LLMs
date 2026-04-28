@@ -28,7 +28,6 @@ def _choose_saved_state_action(): #Asking user whether they want to continue fro
             return raw
         print("Enter 1 or 2.")
 
-
 def _append_scripted_log(event, index):
     row = {
         "mode": "scripted",
@@ -47,12 +46,10 @@ def _append_scripted_log(event, index):
     with LOG_PATH.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row) + "\n")
 
-
 def _reset_runtime_data(state_store, memory_store):
     state_store.reset()
     memory_store.reset()
     LOG_PATH.unlink(missing_ok=True)
-
 
 def _start_new_game(state_store, memory_store):
     print("Choice loop ready. /quit or /exit to stop.")
@@ -81,7 +78,6 @@ def _start_new_game(state_store, memory_store):
         "action_type": handoff["first_action_type"],
     }
     return prologue_summary, initial_player_choice, world_state, False
-
 
 def main():
     llm = LocalLLM()
@@ -132,7 +128,6 @@ def main():
         resume_mode=resume_mode,
     )
     loop.run()
-
 
 if __name__ == "__main__":
     main()

@@ -2,3 +2,5 @@ transformers
 torch
 huggingface_hub
 pytest
+sentence-transformers  # semantic memory embeddings (embedder.py)
+numpy                  # cosine similarity in embedder.py

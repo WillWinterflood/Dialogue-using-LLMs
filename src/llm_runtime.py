@@ -55,6 +55,7 @@ class LocalLLM:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id,
             dtype=model_dtype,
+            low_cpu_mem_usage=True,
         )
         self.model.to(self.device)
         self.model.eval() 
@@ -65,10 +66,6 @@ class LocalLLM:
         # Safe speed knobs for NVIDIA cards.
         torch.backends.cuda.matmul.allow_tf32 = True  #Speeds up LLM as it speeds up matrix multiplications...
         torch.backends.cudnn.allow_tf32 = True
-
-        self.model.generation_config.temperature = None #no sampling, to keep simple for now
-        self.model.generation_config.top_p = None
-        self.model.generation_config.top_k = None
 
         elapsed = time.time() - t0
         print(f"Runtime device: {self.device}")
@@ -91,7 +88,7 @@ class LocalLLM:
         with self.torch.no_grad():
             output_ids = self.model.generate( 
                 **inputs,
-                do_sample=False,
+                do_sample=True,
                 max_new_tokens=self.max_new_tokens,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,

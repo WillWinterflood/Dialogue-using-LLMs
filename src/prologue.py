@@ -5,19 +5,19 @@ Hardcoded prologue scene and scripted choices, Removing the header saying prolog
 '''
 import time
 from src.text_fx import type_line
-PROLOGUE_THOUGHT_SECONDS = 3
+PROLOGUE_THOUGHT_SECONDS = 4
 
 INTRO_RESPONSE_CHOICES = [
     {
         "id": "accept_case",
         "text": "I'm in. Tell me where to start.",
-        "scene_reply": "Mara: Good. Keep your head down and your ears open.",
+        "scene_reply": "Mara: Good. Start with Eli if you want a name. Start with ledger 7C if you want proof.",
         "memory_summary": "Alex accepted Mara's job to recover the missing Echo Shard.",
     },
     {
         "id": "ask_why_me",
         "text": "Why pick me for this?",
-        "scene_reply": "Mara: Because you don't scare easy, and you still owe me a favor.",
+        "scene_reply": "Mara: Because you don't scare easy, and you still owe me a favor. Now, start with Eli if you want a name. Start with ledger 7C if you want proof.",
         "memory_summary": "Alex questioned why Mara chose him for the investigation.",
     },
 ]
@@ -47,6 +47,8 @@ FIRST_MOVE_CHOICES = [
     },
 ]
 
+def _show_turn_marker(turn_number):
+    print(f"[Turn {turn_number}]")
 
 def _select_scripted_choice(prompt_text, options, display_key="text"):
     type_line(prompt_text)
@@ -62,31 +64,26 @@ def _select_scripted_choice(prompt_text, options, display_key="text"):
         print(f"Enter a number from 1 to {len(options)}.")
 
 def run_prologue():
-    print("### PROLOGUE (HARDCODED) ###")
+    # print("### PROLOGUE (HARDCODED) ###")
     type_line(
-        "Narrator: Rain needles through the crooked streets, turning dust to black sludge."
+        "Narrator: Your name is Alex, he is a people pleaser and wants to help people as much as possible, almost like a Robin Hood."
     )
     type_line(
-        "Narrator: In this town, shutters close before sunset and debts outlive the people who owe them."
+        "Narrator: Mara's message reached you at dawn: return to the Old Library now, no questions. By noon, word was already spreading that an archive shipment had gone wrong."
     )
     type_line(
-        "Narrator: You left for an apprenticeship and came back to find familiar faces harder, poorer, and scared."
-    )
-    type_line(
-        "Narrator: Mara's message reached you at dawn: return to the Old Library now, no questions."
-    )
-    type_line(
-        "Narrator: By nightfall you're standing under cracked glass while stormwater drips through the rafters."
+        "Narrator: By nightfall you're standing under cracked glass while stormwater drips through the rafters and a route ledger lies open on Mara's desk."
     )
     type_line("Mara: Alex. Good. The archive's Echo Shard is missing.")
     type_line("Alex: Missing? Who had access?")
-    type_line("Mara: A courier team. Eli was last seen near the Market Gate. Start there.")
-    type_line("Mara: Get me the truth.")
+    type_line("Mara: A courier team moved it at dusk. The route entry does not match the handoff, and Eli was the last one seen near the Market Gate.")
+    type_line("Mara: You really need to help find this, if it gets into the wrong hands, we are all in trouble.")
     print()
 
-    print("### SCRIPTED CHOICES ###")
+    # print("### SCRIPTED CHOICES ###")
     scripted_events = []
 
+    _show_turn_marker(1)
     first_choice = _select_scripted_choice("How do you answer Mara?", INTRO_RESPONSE_CHOICES)
     type_line(f"Alex: {first_choice['text']}")
     print("Mara is thinking.")
@@ -108,6 +105,7 @@ def run_prologue():
         }
     )
 
+    _show_turn_marker(2)
     second_choice = _select_scripted_choice("What is your first move?", FIRST_MOVE_CHOICES, display_key="menu_text")
     type_line(f"Alex: {second_choice['spoken_text']}")
     print("Mara is thinking.")
@@ -130,12 +128,10 @@ def run_prologue():
         }
     )
 
-    type_line("Narrator: The scripted prologue ends. From here, dynamic mode continues.")
-    print()
-
+    # type_line("Narrator: The scripted prologue ends. From here, dynamic mode continues.")
     prologue_summary = (
         "Prologue summary: Mara asked Alex to investigate the missing Echo Shard. "
-        "Eli was last seen near the Market Gate. "
+        "A courier handoff went wrong, the route entry appears altered, and Eli was the last person seen near the Market Gate. "
         "Player final scripted action: " + second_choice["player_action_text"]
     )
 

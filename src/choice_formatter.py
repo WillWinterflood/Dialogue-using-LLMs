@@ -82,6 +82,7 @@ def _is_generic_loop_choice(choice):
     low = _choice_text(choice).lower()
     return any(marker in low for marker in GENERIC_LOOP_MARKERS)
 
+#If there is a halt with the progress then insert one of these candidates, could work but also could be repetitive...
 def _build_progress_choice(blocked_keys, current_npc="", current_location=""):
     npc = str(current_npc or "").strip()
     location = str(current_location or "").strip()
@@ -132,6 +133,39 @@ def _enforce_progress_choice(cleaned_choices, last_choices, current_npc="", curr
     cleaned_choices[-1] = progress
     return cleaned_choices
 
+def _replace_repeated_choices(cleaned_choices, last_choices, current_npc="", current_location=""):
+    if not cleaned_choices:
+        return cleaned_choices
+
+    previous_keys = {_choice_key(choice) for choice in last_choices if _choice_key(choice)}
+    
+    if not previous_keys:
+        return cleaned_choices
+
+    refreshed = []
+    used_keys = set()
+    blocked_keys = set(previous_keys)
+
+    for choice in cleaned_choices:
+        candidate = choice
+        candidate_key = _choice_key(candidate)
+        if candidate_key in previous_keys:
+            replacement = _build_progress_choice(
+                blocked_keys | used_keys,
+                current_npc=current_npc,
+                current_location=current_location,
+            )
+            replacement_key = _choice_key(replacement)
+            if replacement_key and replacement_key not in blocked_keys and replacement_key not in used_keys:
+                candidate = replacement
+                candidate_key = replacement_key
+
+        if candidate_key and candidate_key not in used_keys:
+            refreshed.append(candidate)
+            used_keys.add(candidate_key)
+
+    return refreshed
+
 def _inject_story_choice(cleaned_choices, story_suggestions, last_choices):
     if not story_suggestions:
         return cleaned_choices
@@ -165,4 +199,3 @@ def _inject_story_choice(cleaned_choices, story_suggestions, last_choices):
         return cleaned_choices
 
     return cleaned_choices
-
